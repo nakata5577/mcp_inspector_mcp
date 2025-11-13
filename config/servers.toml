@@ -1,0 +1,44 @@
+# MCP Inspector Server Configuration
+#
+# This file defines the MCP servers that can be inspected.
+# Each server configuration specifies how to connect to and communicate with the target server.
+
+# Example: Filesystem MCP Server
+# Uncomment and adjust the path as needed
+# [[servers]]
+# name = "filesystem"
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+# [servers.env]
+# # Optional environment variables
+
+# Example: GitHub MCP Server
+# Requires GITHUB_TOKEN environment variable
+# [[servers]]
+# name = "github"
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# [servers.env]
+# # GITHUB_TOKEN will be inherited from the parent process
+
+# Example: Custom Rust MCP Server
+# [[servers]]
+# name = "my-rust-server"
+# transport = "stdio"
+# command = "cargo"
+# args = ["run", "--release"]
+# [servers.env]
+# MY_ENV_VAR = "value"
+
+# For testing with the fundamental_analysis MCP server in the parent directory
+# Using pre-built binary for faster startup
+[[servers]]
+name = "fundamental_analysis"
+transport = "stdio"
+command = "../fundamental_analysis/target/release/fundamental_analysis.exe"
+args = []
+
+[servers.env]
+# Add any required environment variables here
