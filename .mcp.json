@@ -1,0 +1,27 @@
+{
+    "mcpServers": {
+        "docs-rs": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@nuskey8/docs-rs-mcp"
+            ],
+            "env": {}
+        },
+        "serena": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "git+https://github.com/oraios/serena",
+                "serena",
+                "start-mcp-server",
+                "--context",
+                "ide-assistant",
+                "--project",
+                "$(pwd)",
+                "--enable-web-dashboard=false"
+            ],
+            "env": {}
+        }
+    }
+}

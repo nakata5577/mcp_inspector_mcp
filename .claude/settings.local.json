@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__list_dir",
+      "Bash(git add:*)",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__onboarding",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis/**)",
+      "mcp__serena__write_memory",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis\\src/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis\\src\\indicators/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis\\src\\indicators/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis\\src\\indicators/**)",
+      "Read(C:\\Users\\takah\\work\\my_mcp_server\\fundamental_analysis\\src/**)",
+      "Bash(cargo check:*)",
+      "Bash(cargo run:*)",
+      "mcp__serena__find_symbol",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__replace_symbol_body",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "mcp__serena__delete_memory",
+      "mcp__serena__insert_after_symbol",
+      "mcp__serena__read_memory",
+      "Bash(tasklist:*)",
+      "Bash(dir:*)",
+      "Read(//c/Users/takah/work/my_mcp_server/fundamental_analysis/**)",
+      "Bash(gemini:*)",
+      "WebSearch",
+      "mcp__serena__think_about_collected_information",
+      "Bash(cargo clippy:*)",
+      "mcp__docs-rs__docs_rs_readme",
+      "mcp__docs-rs__docs_rs_get_item",
+      "mcp__serena__activate_project"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledMcpjsonServers": [
+    "docs-rs",
+    "serena"
+  ]
+}
