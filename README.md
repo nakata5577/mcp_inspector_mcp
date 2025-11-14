@@ -378,7 +378,5 @@ MIT License
 - [rmcp - Rust MCP SDK](https://docs.rs/rmcp/)
 
 ### プロジェクトドキュメント
-- [Phase 2実装計画書](docs/PHASE2_PLAN.md)
-- [Phase 2統合テストガイド](docs/PHASE2_INTEGRATION_TEST.md)
-- [Phase 2テストレポート](docs/PHASE2_TEST_REPORT.md)
+- [統合テストガイド](docs/PHASE2_INTEGRATION_TEST.md)
 - [MCP Inspector CLIガイド](MCP_INSPECTOR_CLI_GUIDE.md)
