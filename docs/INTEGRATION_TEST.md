@@ -1,8 +1,16 @@
-# Phase 2 統合テスト実施ガイド
+# 統合テスト実施ガイド
 
 ## 概要
 
-このガイドでは、MCP Inspector CLIモードを使用してPhase 2で実装された4つの新機能をテストします：
+このガイドでは、MCP Inspector CLIモードを使用してmcp_inspector_mcpサーバーの統合テストを実施する方法を説明します。
+
+### テスト対象の機能
+
+**Phase 1: ツール検査機能**
+- `tools_list` - ツール一覧取得
+- `tools_call` - ツール実行
+
+**Phase 2: リソース・プロンプト検査機能**
 - `resources_list` - リソース一覧取得
 - `resources_read` - リソース読み込み
 - `prompts_list` - プロンプト一覧取得

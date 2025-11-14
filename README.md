@@ -364,7 +364,7 @@ npx @modelcontextprotocol/inspector --cli -- \
   --tool-arg server=fundamental_analysis
 ```
 
-詳細なテスト手順は[docs/PHASE2_INTEGRATION_TEST.md](docs/PHASE2_INTEGRATION_TEST.md)を参照してください。
+詳細なテスト手順は[docs/INTEGRATION_TEST.md](docs/INTEGRATION_TEST.md)を参照してください。
 
 ## ライセンス
 
@@ -378,5 +378,5 @@ MIT License
 - [rmcp - Rust MCP SDK](https://docs.rs/rmcp/)
 
 ### プロジェクトドキュメント
-- [統合テストガイド](docs/PHASE2_INTEGRATION_TEST.md)
+- [統合テストガイド](docs/INTEGRATION_TEST.md)
 - [MCP Inspector CLIガイド](MCP_INSPECTOR_CLI_GUIDE.md)
