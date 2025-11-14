@@ -1,10 +1,14 @@
 use crate::client::McpClient;
-use crate::models::{InspectorError, Result, ServerConfig, ToolInfo};
+use crate::models::{
+    InspectorError, PromptArgument, PromptInfo, PromptMessage, ResourceContent, ResourceInfo,
+    Result, ServerConfig, ToolInfo,
+};
 use anyhow::Context;
 use async_trait::async_trait;
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam};
 use rmcp::service::{RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -145,5 +149,194 @@ impl McpClient for StdioClient {
         }
 
         Ok(())
+    }
+
+    async fn list_resources(&self) -> Result<Vec<ResourceInfo>> {
+        let service_arc = self.get_service().await?;
+        let guard = service_arc.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        let resources_response = service
+            .list_resources(Default::default())
+            .await
+            .map_err(|e| InspectorError::Internal(e.into()))
+            .context("Failed to list resources")?;
+
+        let resources = resources_response
+            .resources
+            .into_iter()
+            .map(|resource| ResourceInfo {
+                uri: resource.uri.clone(),
+                name: Some(resource.name.clone()),
+                description: resource.description.clone(),
+                mime_type: resource.mime_type.clone(),
+            })
+            .collect();
+
+        Ok(resources)
+    }
+
+    async fn read_resource(&self, uri: &str) -> Result<Vec<ResourceContent>> {
+        if uri.is_empty() {
+            return Err(InspectorError::Internal(anyhow::anyhow!(
+                "URI cannot be empty"
+            )));
+        }
+
+        let service_arc = self.get_service().await?;
+        let guard = service_arc.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        let result = service
+            .read_resource(ReadResourceRequestParam {
+                uri: uri.to_string(),
+            })
+            .await
+            .map_err(|e| InspectorError::Internal(e.into()))
+            .context(format!("Failed to read resource: {}", uri))?;
+
+        let contents = result
+            .contents
+            .into_iter()
+            .map(|content| match content {
+                rmcp::model::ResourceContents::TextResourceContents {
+                    uri,
+                    mime_type,
+                    text,
+                    meta: _,
+                } => ResourceContent {
+                    uri,
+                    mime_type,
+                    text: Some(text),
+                    blob: None,
+                },
+                rmcp::model::ResourceContents::BlobResourceContents {
+                    uri,
+                    mime_type,
+                    blob,
+                    meta: _,
+                } => ResourceContent {
+                    uri,
+                    mime_type,
+                    text: None,
+                    blob: Some(blob),
+                },
+            })
+            .collect();
+
+        Ok(contents)
+    }
+
+    async fn list_prompts(&self) -> Result<Vec<PromptInfo>> {
+        let service_arc = self.get_service().await?;
+        let guard = service_arc.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        let prompts_response = service
+            .list_prompts(Default::default())
+            .await
+            .map_err(|e| InspectorError::Internal(e.into()))
+            .context("Failed to list prompts")?;
+
+        let prompts = prompts_response
+            .prompts
+            .into_iter()
+            .map(|prompt| {
+                let arguments = prompt
+                    .arguments
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|arg| PromptArgument {
+                        name: arg.name,
+                        description: arg.description,
+                        required: arg.required.unwrap_or(false),
+                    })
+                    .collect();
+
+                PromptInfo {
+                    name: prompt.name,
+                    description: prompt.description,
+                    arguments,
+                }
+            })
+            .collect();
+
+        Ok(prompts)
+    }
+
+    async fn get_prompt(
+        &self,
+        name: &str,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<PromptMessage>> {
+        let service_arc = self.get_service().await?;
+        let guard = service_arc.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        // Convert HashMap<String, String> to Option<serde_json::Map<String, Value>>
+        let arguments_map = if arguments.is_empty() {
+            None
+        } else {
+            let map: serde_json::Map<String, serde_json::Value> = arguments
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                .collect();
+            Some(map)
+        };
+
+        let result = service
+            .get_prompt(GetPromptRequestParam {
+                name: name.to_string(),
+                arguments: arguments_map,
+            })
+            .await
+            .map_err(|e| InspectorError::Internal(e.into()))
+            .context(format!("Failed to get prompt: {}", name))?;
+
+        let messages = result
+            .messages
+            .into_iter()
+            .map(|msg| {
+                // Convert rmcp::model::PromptMessage to our PromptMessage
+                let role = match msg.role {
+                    rmcp::model::PromptMessageRole::User => "user".to_string(),
+                    rmcp::model::PromptMessageRole::Assistant => "assistant".to_string(),
+                };
+
+                // Convert content to serde_json::Value
+                let content = match serde_json::to_value(&msg.content) {
+                    Ok(value) => value,
+                    Err(_) => serde_json::Value::Null,
+                };
+
+                PromptMessage { role, content }
+            })
+            .collect();
+
+        Ok(messages)
     }
 }
