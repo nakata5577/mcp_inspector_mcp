@@ -17,10 +17,9 @@
 
 ### 2. 環境準備
 ```bash
-# fundamental_analysis MCPサーバーをビルド
-cd c:/Users/takah/work/my_mcp_server/fundamental_analysis_mcp
-npm install
-npm run build
+# fundamental_analysis MCPサーバーをビルド（Rustプロジェクト）
+cd c:/Users/takah/work/my_mcp_server/fundamental_analysis
+cargo build --release
 
 # mcp_inspector_mcpをビルド
 cd c:/Users/takah/work/my_mcp_server/mcp_inspector_mcp
@@ -30,15 +29,23 @@ cargo build --release
 ## テスト環境の起動
 
 ### MCP Inspector CLIの起動
+
+**fundamental_analysisサーバーを使用する場合:**
 ```bash
 npx @modelcontextprotocol/inspector --cli \
-  node c:/Users/takah/work/my_mcp_server/fundamental_analysis_mcp/build/index.js \
+  cargo run --manifest-path c:/Users/takah/work/my_mcp_server/fundamental_analysis/Cargo.toml \
   -- cargo run --manifest-path c:/Users/takah/work/my_mcp_server/mcp_inspector_mcp/Cargo.toml
+```
+
+**または、mcp_inspector_mcpのみをテストする場合（簡易版）:**
+```bash
+npx @modelcontextprotocol/inspector --cli \
+  cargo run --manifest-path c:/Users/takah/work/my_mcp_server/mcp_inspector_mcp/Cargo.toml
 ```
 
 **注意:**
 - パスは環境に応じて調整してください
-- fundamental_analysis MCPサーバーが正常にビルドされていることを確認してください
+- 両方のサーバーが正常にビルドされていることを確認してください
 - MCP Inspector CLIが起動したら、プロンプト（`>`）が表示されます
 
 ## テストケース

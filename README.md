@@ -16,15 +16,15 @@ AIエージェント (Claude Desktop)
 
 ## 機能
 
-### MVP (Phase 1) - 現在実装済み
+### MVP (Phase 1) - 実装済み
 - ✅ `tools_list` - 対象MCPサーバーのツール一覧を取得
 - ✅ `tools_call` - 対象MCPサーバーのツールを実行
 
-### Phase 2 (計画中)
-- ⏳ `resources_list` - リソース一覧取得
-- ⏳ `resources_read` - リソース読み取り
-- ⏳ `prompts_list` - プロンプト一覧取得
-- ⏳ `prompts_get` - プロンプト取得
+### Phase 2 - 実装済み ✨
+- ✅ `resources_list` - リソース一覧取得
+- ✅ `resources_read` - リソース読み取り
+- ✅ `prompts_list` - プロンプト一覧取得
+- ✅ `prompts_get` - プロンプト取得
 
 ## セットアップ
 
@@ -119,7 +119,9 @@ Claude Desktopから以下のように使用します：
 
 ## 提供するツール
 
-### tools_list
+### Phase 1: ツール検査機能
+
+#### tools_list
 
 対象MCPサーバーが提供するツールの一覧を取得します。
 
@@ -140,7 +142,7 @@ Claude Desktopから以下のように使用します：
 }
 ```
 
-### tools_call
+#### tools_call
 
 対象MCPサーバーの特定のツールを実行します。
 
@@ -155,6 +157,107 @@ Claude Desktopから以下のように使用します：
   "server": "fundamental_analysis",
   "tool_name": "calculate_rsi",
   "result": { ... }
+}
+```
+
+### Phase 2: リソース・プロンプト検査機能 ✨
+
+#### resources_list
+
+対象MCPサーバーが提供するリソースの一覧を取得します。
+
+**引数:**
+- `server` (string, required): 対象サーバー名
+
+**戻り値:**
+```json
+{
+  "server": "fundamental_analysis",
+  "resources": [
+    {
+      "uri": "file:///path/to/resource",
+      "name": "Resource Name",
+      "description": "Resource description",
+      "mime_type": "text/plain"
+    }
+  ]
+}
+```
+
+#### resources_read
+
+対象MCPサーバーの特定のリソースを読み込みます。
+
+**引数:**
+- `server` (string, required): 対象サーバー名
+- `uri` (string, required): リソースのURI
+
+**戻り値:**
+```json
+{
+  "server": "fundamental_analysis",
+  "uri": "file:///path/to/resource",
+  "contents": [
+    {
+      "uri": "file:///path/to/resource",
+      "mime_type": "text/plain",
+      "text": "Resource content here",
+      "blob": null
+    }
+  ]
+}
+```
+
+#### prompts_list
+
+対象MCPサーバーが提供するプロンプトテンプレートの一覧を取得します。
+
+**引数:**
+- `server` (string, required): 対象サーバー名
+
+**戻り値:**
+```json
+{
+  "server": "fundamental_analysis",
+  "prompts": [
+    {
+      "name": "analyze_company",
+      "description": "企業分析を行うプロンプト",
+      "arguments": [
+        {
+          "name": "ticker",
+          "description": "ティッカーシンボル",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### prompts_get
+
+対象MCPサーバーの特定のプロンプトテンプレートを取得します。
+
+**引数:**
+- `server` (string, required): 対象サーバー名
+- `name` (string, required): プロンプト名
+- `arguments` (object, optional): プロンプトに渡す引数
+
+**戻り値:**
+```json
+{
+  "server": "fundamental_analysis",
+  "name": "analyze_company",
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Analyze AAPL company..."
+      }
+    }
+  ]
 }
 ```
 
@@ -239,12 +342,43 @@ cargo test
 RUST_LOG=debug cargo run
 ```
 
+### 統合テスト
+
+MCP Inspector CLIモードを使用して統合テストを実施できます：
+
+```bash
+# ツール一覧の確認
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --release --method tools/list
+
+# リソース一覧の取得
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --release --method tools/call \
+  --tool-name resources_list \
+  --tool-arg server=fundamental_analysis
+
+# プロンプト一覧の取得
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --release --method tools/call \
+  --tool-name prompts_list \
+  --tool-arg server=fundamental_analysis
+```
+
+詳細なテスト手順は[docs/PHASE2_INTEGRATION_TEST.md](docs/PHASE2_INTEGRATION_TEST.md)を参照してください。
+
 ## ライセンス
 
 MIT License
 
 ## 参考
 
+### 公式リソース
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
 - [rmcp - Rust MCP SDK](https://docs.rs/rmcp/)
+
+### プロジェクトドキュメント
+- [Phase 2実装計画書](docs/PHASE2_PLAN.md)
+- [Phase 2統合テストガイド](docs/PHASE2_INTEGRATION_TEST.md)
+- [Phase 2テストレポート](docs/PHASE2_TEST_REPORT.md)
+- [MCP Inspector CLIガイド](MCP_INSPECTOR_CLI_GUIDE.md)
