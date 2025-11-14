@@ -26,6 +26,9 @@ AIエージェント (Claude Desktop)
 - ✅ `prompts_list` - プロンプト一覧取得
 - ✅ `prompts_get` - プロンプト取得
 
+### Phase 3 - 実装済み 🔍
+- ✅ `sampling_logs` - Samplingリクエストのログ取得
+
 ## セットアップ
 
 ### 1. ビルド
@@ -113,6 +116,23 @@ Claude Desktopから以下のように使用します：
       "symbol": "AAPL",
       "period": 14
     }
+  }
+}
+```
+
+### Samplingログの取得
+
+```
+対象サーバー"fundamental_analysis"のSamplingログを最新10件取得してください
+```
+
+内部的には以下のツールが呼ばれます：
+```json
+{
+  "name": "sampling_logs",
+  "arguments": {
+    "server": "fundamental_analysis",
+    "limit": 10
   }
 }
 ```
@@ -261,6 +281,46 @@ Claude Desktopから以下のように使用します：
 }
 ```
 
+### Phase 3: Samplingログ機能 🔍
+
+#### sampling_logs
+
+対象MCPサーバーからのSamplingリクエストのログを取得します。
+
+**⚠️ 重要な制限事項:**
+このツールは現在、ログ管理インフラのみを提供しています。rmcp 0.8.5の技術的制約により、実際のSampling通信の監視は実装されていません。将来のバージョンで拡張予定です。
+
+**引数:**
+- `server` (string, required): 対象サーバー名
+- `limit` (integer, optional): 取得するログの最大件数（デフォルト: 100）
+- `status` (string, optional): フィルタするステータス（"all", "success", "failed"、デフォルト: "all"）
+
+**戻り値:**
+```json
+{
+  "server": "fundamental_analysis",
+  "logs": [
+    {
+      "timestamp": "2025-01-15T12:00:00Z",
+      "server_name": "fundamental_analysis",
+      "request_id": "uuid-here",
+      "model_preferences": {
+        "hints": [],
+        "cost_priority": null,
+        "speed_priority": null,
+        "intelligence_priority": null
+      },
+      "system_prompt": null,
+      "messages": [],
+      "max_tokens": 1024,
+      "status": "Pending",
+      "error_message": null
+    }
+  ],
+  "total_count": 1
+}
+```
+
 ## トラブルシューティング
 
 ### サーバーが見つからない
@@ -282,6 +342,17 @@ Claude Desktopから以下のように使用します：
    cargo run --release --manifest-path ../fundamental_analysis/Cargo.toml
    ```
 3. 環境変数が正しく設定されているか確認
+
+### Samplingログが空
+
+**現象:** sampling_logsツールが常に空のログを返す
+
+**理由:**
+Phase 3は現在、ログ管理インフラのみを実装しています。rmcp 0.8.5の技術的制約により、実際のSampling通信の監視は未実装です。
+
+**将来の対応:**
+- rmcpのアップデート待ち
+- または、カスタムTransport層の実装による拡張
 
 ### ログの確認
 
@@ -312,7 +383,8 @@ src/
 │   └── stdio_client.rs # Stdioトランスポート
 ├── services/            # ビジネスロジック
 │   ├── mod.rs
-│   └── inspector.rs    # Inspector機能
+│   ├── inspector.rs    # Inspector機能
+│   └── sampling_logger.rs # Samplingログ管理
 └── models/              # データ構造
     ├── mod.rs
     ├── error.rs        # エラー型
@@ -361,6 +433,12 @@ npx @modelcontextprotocol/inspector --cli -- \
 npx @modelcontextprotocol/inspector --cli -- \
   cargo run --release --method tools/call \
   --tool-name prompts_list \
+  --tool-arg server=fundamental_analysis
+
+# Samplingログの取得
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --release --method tools/call \
+  --tool-name sampling_logs \
   --tool-arg server=fundamental_analysis
 ```
 

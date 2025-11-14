@@ -16,6 +16,9 @@
 - `prompts_list` - プロンプト一覧取得
 - `prompts_get` - プロンプト取得
 
+**Phase 3: Samplingログ機能**
+- `sampling_logs` - Samplingログ取得
+
 ## 前提条件
 
 ### 環境準備
@@ -51,7 +54,7 @@ npx @modelcontextprotocol/inspector --cli -- <server_command> --method <method_n
 
 ### テストケース1: ツール一覧の確認
 
-**目的:** Phase 2で追加された4つのツールが登録されていることを確認
+**目的:** Phase 3で追加されたツールを含む全ツールが登録されていることを確認
 
 **コマンド:**
 ```bash
@@ -65,13 +68,14 @@ npx @modelcontextprotocol/inspector --cli -- \
 以下のツールが一覧に含まれていること：
 - ✅ `tools_list` (Phase 1)
 - ✅ `tools_call` (Phase 1)
-- ✅ `resources_list` (Phase 2) ✨ 新規
-- ✅ `resources_read` (Phase 2) ✨ 新規
-- ✅ `prompts_list` (Phase 2) ✨ 新規
-- ✅ `prompts_get` (Phase 2) ✨ 新規
+- ✅ `resources_list` (Phase 2)
+- ✅ `resources_read` (Phase 2)
+- ✅ `prompts_list` (Phase 2)
+- ✅ `prompts_get` (Phase 2)
+- ✅ `sampling_logs` (Phase 3) 🔍 新規
 
 **成功基準:**
-- 6つのツールすべてが表示される
+- 7つのツールすべてが表示される
 - 各ツールに日本語の説明（description）が含まれている
 - 各ツールに入力スキーマ（inputSchema）が定義されている
 
@@ -239,6 +243,67 @@ npx @modelcontextprotocol/inspector --cli -- \
 
 ---
 
+### テストケース8: sampling_logsツールの実行
+
+**目的:** Samplingログ取得機能の動作を確認
+
+**コマンド:**
+```bash
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --manifest-path c:/Users/takah/work/my_mcp_server/mcp_inspector_mcp/Cargo.toml \
+  --method tools/call \
+  --tool-name sampling_logs \
+  --tool-arg server=fundamental_analysis
+```
+
+**期待される結果:**
+
+```json
+{
+  "server": "fundamental_analysis",
+  "logs": [],
+  "total_count": 0
+}
+```
+
+**注意:**
+Phase 3は現在、ログ管理インフラのみを実装しています。rmcp 0.8.5の技術的制約により、実際のSampling通信の監視は未実装のため、通常は空のログが返されます。
+
+**成功基準:**
+- ツールが正常に実行される
+- `server`フィールドに"fundamental_analysis"が含まれる
+- `logs`フィールドが存在する（空でも可）
+- `total_count`フィールドが存在する
+- エラーが発生しない
+
+---
+
+### テストケース9: sampling_logsツールのオプション引数テスト
+
+**目的:** limitパラメータとstatusパラメータが正しく動作することを確認
+
+**コマンド:**
+```bash
+npx @modelcontextprotocol/inspector --cli -- \
+  cargo run --manifest-path c:/Users/takah/work/my_mcp_server/mcp_inspector_mcp/Cargo.toml \
+  --method tools/call \
+  --tool-name sampling_logs \
+  --tool-arg server=fundamental_analysis \
+  --tool-arg limit=10 \
+  --tool-arg status=all
+```
+
+**期待される結果:**
+
+引数が正しく解析され、エラーなく実行されること
+
+**成功基準:**
+- ツールが正常に実行される
+- 引数の解析エラーが発生しない
+- 適切なレスポンスが返される
+
+---
+
 ## テスト実施チェックリスト
 
 ### 機能テスト
@@ -247,6 +312,8 @@ npx @modelcontextprotocol/inspector --cli -- \
 - [ ] テストケース2: tools_listツールの実行
 - [ ] テストケース3: resources_listツールの実行
 - [ ] テストケース4: prompts_listツールの実行
+- [ ] テストケース8: sampling_logsツールの実行
+- [ ] テストケース9: sampling_logsツールのオプション引数テスト
 
 ### エラーハンドリングテスト
 
@@ -323,6 +390,7 @@ export PATH="/c/Program Files/nodejs:$PATH"
 - **詳細なCLI使用方法:** `MCP_INSPECTOR_CLI_GUIDE.md`
 - **Phase 2実装計画:** `docs/PHASE2_PLAN.md`
 - **Phase 2テストレポート:** `docs/PHASE2_TEST_REPORT.md`
+- **Phase 3実装計画:** `docs/PHASE3_PLAN.md`
 
 ---
 

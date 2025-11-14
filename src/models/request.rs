@@ -42,3 +42,26 @@ pub struct PromptGetRequest {
     #[serde(default)]
     pub arguments: HashMap<String, String>,
 }
+
+/// Default limit for sampling logs
+fn default_limit() -> usize {
+    100
+}
+
+/// Default status filter for sampling logs
+fn default_status() -> String {
+    "all".to_string()
+}
+
+/// Request to get sampling logs from a specific MCP server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SamplingLogsRequest {
+    /// Name of the target MCP server
+    pub server: String,
+    /// Maximum number of logs to return (default: 100)
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Filter by status: "all", "success", "failed" (default: "all")
+    #[serde(default = "default_status")]
+    pub status: String,
+}

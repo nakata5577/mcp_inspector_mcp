@@ -1,6 +1,6 @@
 use crate::models::{
     PromptGetRequest, PromptsListRequest, ResourceReadRequest, ResourcesListRequest,
-    ToolCallRequest,
+    SamplingLogsRequest, ToolCallRequest,
 };
 use crate::services::InspectorService;
 use rmcp::handler::server::wrapper::Parameters;
@@ -241,6 +241,43 @@ impl InspectorServer {
                 .unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
+
+    /// Get sampling logs from a specific MCP server
+    #[tool(
+        name = "sampling_logs",
+        description = "対象MCPサーバーからのSamplingリクエストのログを取得します"
+    )]
+    async fn sampling_logs(
+        &self,
+        params: Parameters<SamplingLogsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let request = SamplingLogsRequest {
+            server: params.0.server.clone(),
+            limit: params.0.limit.unwrap_or(100),
+            status: params.0.status.clone().unwrap_or_else(|| "all".to_string()),
+        };
+
+        let result = self
+            .inspector
+            .sampling_logs(request)
+            .await
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to get sampling logs: {}", e).into(),
+                data: None,
+            })?;
+
+        let json_result = serde_json::to_value(&result).map_err(|e| McpError {
+            code: ErrorCode(-32603),
+            message: format!("JSON serialization error: {}", e).into(),
+            data: None,
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json_result)
+                .unwrap_or_else(|_| json_result.to_string()),
+        )]))
+    }
 }
 
 impl ServerHandler for InspectorServer {
@@ -369,6 +406,20 @@ impl ServerHandler for InspectorServer {
 
                 self.prompts_get(params).await
             }
+            "sampling_logs" => {
+                let params_value = request.arguments
+                    .map(serde_json::Value::Object)
+                    .unwrap_or(serde_json::json!({}));
+
+                let params: Parameters<SamplingLogsParams> = serde_json::from_value(params_value)
+                    .map_err(|e| McpError {
+                        code: ErrorCode(-32602),
+                        message: format!("Invalid parameters: {}", e).into(),
+                        data: None,
+                    })?;
+
+                self.sampling_logs(params).await
+            }
             _ => Err(McpError {
                 code: ErrorCode(-32601),
                 message: format!("Unknown tool: {}", request.name).into(),
@@ -430,6 +481,19 @@ struct PromptGetParams {
     /// Arguments to pass to the prompt
     #[serde(default)]
     arguments: Option<HashMap<String, String>>,
+}
+
+/// Parameters for sampling_logs tool
+#[derive(Deserialize, JsonSchema)]
+struct SamplingLogsParams {
+    /// Name of the MCP server to get sampling logs from
+    server: String,
+    /// Maximum number of logs to return (default: 100)
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Filter by status: "all", "success", "failed" (default: "all")
+    #[serde(default)]
+    status: Option<String>,
 }
 
 /// Run the MCP Inspector server

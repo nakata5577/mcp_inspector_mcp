@@ -2,8 +2,10 @@ use crate::client::ClientManager;
 use crate::models::{
     PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
     ResourceReadRequest, ResourceReadResponse, ResourcesListRequest, ResourcesListResponse, Result,
-    ServerConfig, ToolCallRequest, ToolCallResponse, ToolsListResponse,
+    SamplingLogsRequest, SamplingLogsResponse, ServerConfig, ToolCallRequest, ToolCallResponse,
+    ToolsListResponse,
 };
+use crate::services::SamplingLogger;
 use anyhow::Context;
 use std::sync::Arc;
 
@@ -11,6 +13,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct InspectorService {
     client_manager: Arc<ClientManager>,
+    sampling_logger: SamplingLogger,
 }
 
 impl InspectorService {
@@ -18,6 +21,7 @@ impl InspectorService {
     pub fn new(configs: Vec<ServerConfig>) -> Self {
         Self {
             client_manager: Arc::new(ClientManager::new(configs)),
+            sampling_logger: SamplingLogger::new(1000),
         }
     }
 
@@ -140,6 +144,35 @@ impl InspectorService {
             server: request.server,
             name: request.name,
             messages,
+        })
+    }
+
+    /// Get sampling logs from the specified server
+    ///
+    /// This method retrieves sampling logs filtered by the provided criteria.
+    /// Currently, the logs are stored in memory, but this design allows for
+    /// future extensions (e.g., database persistence or file storage).
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The request containing filter criteria (server, limit, status)
+    ///
+    /// # Returns
+    ///
+    /// A response containing the filtered logs and total count
+    pub async fn sampling_logs(&self, request: SamplingLogsRequest) -> Result<SamplingLogsResponse> {
+        let logs = self.sampling_logger.get_logs(
+            &request.server,
+            request.limit,
+            &request.status,
+        );
+
+        let total_count = self.sampling_logger.count_logs(&request.server);
+
+        Ok(SamplingLogsResponse {
+            server: request.server,
+            logs,
+            total_count,
         })
     }
 }
