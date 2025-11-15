@@ -1,14 +1,18 @@
 use crate::client::{McpClient, StdioClient};
-use crate::models::{InspectorError, Result, ServerConfig, TransportType};
+use crate::models::{InspectorError, Result, ServerConfig};
 use crate::services::SamplingLogger;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Manages MCP client connections to multiple servers
+///
+/// This manager implements connection pooling to reuse client connections
+/// across multiple requests, improving performance by avoiding repeated
+/// connection establishment overhead.
 pub struct ClientManager {
     configs: HashMap<String, ServerConfig>,
-    clients: Arc<RwLock<HashMap<String, Box<dyn McpClient>>>>,
+    clients: Arc<RwLock<HashMap<String, Arc<StdioClient>>>>,
     sampling_logger: Arc<SamplingLogger>,
 }
 
@@ -28,13 +32,41 @@ impl ClientManager {
     }
 
     /// Get a client for the specified server, creating a new connection if necessary
+    ///
+    /// This method implements connection pooling:
+    /// - If a connected client exists, it will be reused (returns Arc clone)
+    /// - If a client exists but is disconnected, a new one will be created
+    /// - If no client exists, a new one will be created
+    ///
+    /// Connection pooling improves performance by avoiding repeated connection
+    /// establishment overhead on subsequent requests to the same server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to connect to
+    ///
+    /// # Returns
+    /// A boxed McpClient instance (wrapping Arc<StdioClient>)
+    ///
+    /// # Errors
+    /// Returns an error if the server is not found in the configuration
     pub async fn get_client(&self, server_name: &str) -> Result<Box<dyn McpClient>> {
-        // Check if client already exists
+        // First, check if a connected client already exists (read lock)
         {
             let clients = self.clients.read().await;
-            if let Some(_client) = clients.get(server_name) {
-                // For MVP, we'll create a new client each time
-                // In future phases, we can implement connection pooling
+            if let Some(client) = clients.get(server_name) {
+                if client.is_connected().await {
+                    tracing::debug!(
+                        server = server_name,
+                        "Reusing existing connected client from pool"
+                    );
+                    // Return an Arc clone wrapped in a Box
+                    return Ok(Box::new(Arc::clone(client)));
+                } else {
+                    tracing::debug!(
+                        server = server_name,
+                        "Existing client is disconnected, creating new connection"
+                    );
+                }
             }
         }
 
@@ -46,14 +78,20 @@ impl ClientManager {
             .clone();
 
         // Create new client based on transport type
-        let client: Box<dyn McpClient> = match config.transport {
-            TransportType::Stdio => Box::new(StdioClient::new(
-                config,
-                Arc::clone(&self.sampling_logger),
-            )),
-        };
+        let client = Arc::new(StdioClient::new(
+            config.clone(),
+            Arc::clone(&self.sampling_logger),
+        ));
 
-        Ok(client)
+        // Store the client in the pool (write lock)
+        {
+            let mut clients = self.clients.write().await;
+            clients.insert(server_name.to_string(), Arc::clone(&client));
+        }
+
+        tracing::debug!(server = server_name, "Created new client and added to pool");
+
+        Ok(Box::new(client))
     }
 
     /// List all configured server names
@@ -64,5 +102,43 @@ impl ClientManager {
     /// Get configuration for a specific server
     pub fn get_config(&self, server_name: &str) -> Option<&ServerConfig> {
         self.configs.get(server_name)
+    }
+
+    /// Clean up disconnected clients from the pool
+    ///
+    /// This method removes clients that are no longer connected,
+    /// helping to free up resources and maintain a clean connection pool.
+    ///
+    /// # Example
+    /// ```
+    /// manager.cleanup_pool().await;
+    /// ```
+    pub async fn cleanup_pool(&self) {
+        let mut clients = self.clients.write().await;
+
+        // Collect disconnected server names
+        let mut to_remove = Vec::new();
+        for (server_name, client) in clients.iter() {
+            if !client.is_connected().await {
+                to_remove.push(server_name.clone());
+            }
+        }
+
+        // Remove disconnected clients
+        for server_name in to_remove {
+            clients.remove(&server_name);
+            tracing::debug!(
+                server = server_name.as_str(),
+                "Removed disconnected client from pool"
+            );
+        }
+    }
+
+    /// Get the number of clients currently in the pool
+    ///
+    /// This is useful for monitoring and debugging the connection pool.
+    pub async fn pool_size(&self) -> usize {
+        let clients = self.clients.read().await;
+        clients.len()
     }
 }

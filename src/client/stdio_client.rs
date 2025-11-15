@@ -42,18 +42,17 @@ impl StdioClient {
         let config = self.config.clone();
 
         // Build command with arguments and environment variables
-        let base_transport = TokioChildProcess::new(Command::new(&config.params.command).configure(
-            |cmd| {
+        let base_transport =
+            TokioChildProcess::new(Command::new(&config.params.command).configure(|cmd| {
                 cmd.args(&config.params.args);
                 for (key, value) in &config.params.env {
                     cmd.env(key, value);
                 }
-            },
-        ))
-        .map_err(|e| InspectorError::ConnectionFailed {
-            server: config.name.clone(),
-            source: e.into(),
-        })?;
+            }))
+            .map_err(|e| InspectorError::ConnectionFailed {
+                server: config.name.clone(),
+                source: e.into(),
+            })?;
 
         // Wrap with MonitoringTransport to enable sampling monitoring
         let monitoring_transport = MonitoringTransport::new(
@@ -63,13 +62,13 @@ impl StdioClient {
         );
 
         // Create service and establish connection
-        let service = ()
-            .serve(monitoring_transport)
-            .await
-            .map_err(|e| InspectorError::ConnectionFailed {
-                server: config.name.clone(),
-                source: e.into(),
-            })?;
+        let service =
+            ().serve(monitoring_transport)
+                .await
+                .map_err(|e| InspectorError::ConnectionFailed {
+                    server: config.name.clone(),
+                    source: e.into(),
+                })?;
 
         *guard = Some(service);
         Ok(())
@@ -112,14 +111,20 @@ impl McpClient for StdioClient {
             .map(|tool| ToolInfo {
                 name: tool.name.to_string(),
                 description: tool.description.map(|d| d.to_string()),
-                input_schema: Some(serde_json::to_value(&*tool.input_schema).unwrap_or(serde_json::Value::Null)),
+                input_schema: Some(
+                    serde_json::to_value(&*tool.input_schema).unwrap_or(serde_json::Value::Null),
+                ),
             })
             .collect();
 
         Ok(tools)
     }
 
-    async fn call_tool(&self, name: &str, arguments: serde_json::Value) -> Result<serde_json::Value> {
+    async fn call_tool(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         let service_arc = self.get_service().await?;
         let guard = service_arc.lock().await;
 
@@ -348,5 +353,51 @@ impl McpClient for StdioClient {
             .collect();
 
         Ok(messages)
+    }
+}
+
+// Implement McpClient for Arc<StdioClient> to support connection pooling
+#[async_trait]
+impl McpClient for Arc<StdioClient> {
+    async fn is_connected(&self) -> bool {
+        (**self).is_connected().await
+    }
+
+    async fn list_tools(&self) -> Result<Vec<ToolInfo>> {
+        (**self).list_tools().await
+    }
+
+    async fn call_tool(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        (**self).call_tool(name, arguments).await
+    }
+
+    async fn list_resources(&self) -> Result<Vec<ResourceInfo>> {
+        (**self).list_resources().await
+    }
+
+    async fn read_resource(&self, uri: &str) -> Result<Vec<ResourceContent>> {
+        (**self).read_resource(uri).await
+    }
+
+    async fn list_prompts(&self) -> Result<Vec<PromptInfo>> {
+        (**self).list_prompts().await
+    }
+
+    async fn get_prompt(
+        &self,
+        name: &str,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<PromptMessage>> {
+        (**self).get_prompt(name, arguments).await
+    }
+
+    async fn disconnect(&mut self) -> Result<()> {
+        // For Arc, we can't mutate the inner value directly
+        // Connection cleanup will happen when the Arc is dropped
+        Ok(())
     }
 }

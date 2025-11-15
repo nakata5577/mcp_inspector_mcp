@@ -16,7 +16,11 @@ pub trait McpClient: Send + Sync {
     async fn list_tools(&self) -> Result<Vec<ToolInfo>>;
 
     /// Call a tool with the given name and arguments
-    async fn call_tool(&self, name: &str, arguments: serde_json::Value) -> Result<serde_json::Value>;
+    async fn call_tool(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value>;
 
     /// List all available resources on the server
     async fn list_resources(&self) -> Result<Vec<ResourceInfo>>;
