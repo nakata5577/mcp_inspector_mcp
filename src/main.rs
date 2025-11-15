@@ -17,8 +17,8 @@ async fn main() -> Result<()> {
     tracing::info!("MCP Inspector Server starting...");
 
     // Load configuration
-    let config_path = env::var("MCP_INSPECTOR_CONFIG")
-        .unwrap_or_else(|_| "config/servers.toml".to_string());
+    let config_path =
+        env::var("MCP_INSPECTOR_CONFIG").unwrap_or_else(|_| "config/servers.toml".to_string());
 
     tracing::info!("Loading configuration from: {}", config_path);
 
@@ -28,13 +28,21 @@ async fn main() -> Result<()> {
     let config: InspectorConfig = toml::from_str(&config_content)
         .with_context(|| format!("Failed to parse configuration file: {}", config_path))?;
 
+    tracing::info!("Loaded {} server configuration(s)", config.servers.len());
+
+    // Log logging backend configuration
     tracing::info!(
-        "Loaded {} server configuration(s)",
-        config.servers.len()
+        "Logging backend: {:?} (max_logs: {})",
+        config.logging.backend,
+        config.logging.max_logs
     );
+    if let Some(ref db_path) = config.logging.db_path {
+        tracing::info!("Database path: {}", db_path);
+    }
 
     // Initialize inspector service
-    let inspector = InspectorService::new(config.servers);
+    let inspector =
+        InspectorService::new(config).context("Failed to initialize InspectorService")?;
 
     // Log configured servers
     for server_name in inspector.list_servers() {

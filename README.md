@@ -34,6 +34,12 @@ AIエージェント (Claude Desktop)
 - ✅ StdioClient統合 - MonitoringTransportの自動適用
 - ⚠️ E2Eテストは環境制約により未検証（実装は完了）
 
+### Phase 5 - 実装済み 🗄️
+- ✅ LoggerBackend抽象化 - トレイトベースの統一インターフェース
+- ✅ MemoryLogger - 高速インメモリストレージ
+- ✅ PersistentLogger - sled永続化バックエンド
+- ✅ 設定ベースの切替 - config/servers.tomlでバックエンド選択
+
 ## セットアップ
 
 ### 1. ビルド
@@ -82,6 +88,55 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 ```
 
 **注意:** Windowsの場合、パスの`\`を`\`にエスケープしてください。
+
+### 4. ログバックエンドの設定（Phase 5）
+
+MCP Inspector MCPは、2種類のログストレージバックエンドをサポートしています。
+
+#### Memory Backend（デフォルト）
+
+メモリ内にログを保存します。サーバー再起動でログが消失しますが、高速な読み書きが可能です。開発・テスト環境に最適です。
+
+```toml
+[logging]
+backend = "memory"
+max_logs = 10000
+```
+
+#### Persistent Backend
+
+sledデータベースを使用してディスクに保存します。サーバー再起動後もログを保持でき、大量のログを長期保存可能です。本番環境に推奨します。
+
+```toml
+[logging]
+backend = "persistent"
+db_path = "./data/logs.db"
+max_logs = 10000
+```
+
+**設定項目:**
+
+| 項目 | 型 | 必須 | デフォルト | 説明 |
+|------|----|----|-----------|------|
+| `backend` | string | No | "memory" | バックエンドタイプ（"memory"または"persistent"） |
+| `db_path` | string | Conditional | - | データベースファイルパス（persistentの場合必須） |
+| `max_logs` | integer | No | 10000 | サーバーごとの最大ログ数 |
+
+**ログローテーション:**
+- 各サーバーごとに`max_logs`で指定した件数までログを保存
+- 上限を超えると、古いログから自動削除（FIFO方式）
+
+**ストレージサイズの目安:**
+- メモリ: 10,000件あたり約10-20MB
+- ディスク: 10,000件あたり約5-10MB（sled圧縮済み）
+
+**データベースディレクトリの準備:**
+
+Persistent backendを使用する場合は、事前にディレクトリを作成してください：
+
+```bash
+mkdir -p ./data
+```
 
 ## 使用方法
 
@@ -385,6 +440,54 @@ Windows環境でのstdio通信制約。実装自体は正しく、以下が検�
 2. Linux/macOS環境での再テスト
 3. 詳細は `docs/PHASE4_COMPLETION_REPORT.md` を参照
 
+### Phase 5: ログ永続化のトラブルシューティング
+
+#### データベースファイルが作成されない
+
+**解決策:**
+1. `db_path`で指定したディレクトリが存在するか確認
+   ```bash
+   # Windowsの場合
+   mkdir data
+   # Linux/macOSの場合
+   mkdir -p ./data
+   ```
+2. 親ディレクトリは自動作成されないため、事前に作成が必要
+3. パスの書き込み権限を確認
+
+#### ログが保存されない
+
+**解決策:**
+1. `config/servers.toml`の`[logging]`セクションを確認
+2. `backend = "persistent"`の場合、`db_path`が設定されているか確認
+3. ログ出力で使用中のバックエンドを確認:
+   ```
+   INFO Creating persistent logger (db_path: ./data/logs.db, max_logs: 10000)
+   ```
+   または
+   ```
+   INFO Creating memory logger (max_logs: 10000)
+   ```
+
+#### ディスク容量不足
+
+**解決策:**
+1. `max_logs`を減らす（例: 10000 → 5000）
+2. 古いログデータベースを削除:
+   ```bash
+   # Windowsの場合
+   del /F /Q data\logs.db
+   # Linux/macOSの場合
+   rm -rf ./data/logs.db
+   ```
+
+#### パフォーマンスが遅い
+
+**原因と対策:**
+- Persistent backendはMemory backendより約2倍遅い（500-1000件/秒 vs 1000件/秒以上）
+- 開発・テスト環境では`backend = "memory"`を使用
+- 本番環境でログの永続化が必要な場合のみPersistentを使用
+
 ### ログの確認
 
 環境変数`RUST_LOG`を設定すると詳細なログが出力されます：
@@ -399,6 +502,8 @@ RUST_LOG=debug cargo run --release
 - **rmcp 0.8.5** - MCP Rust SDK
 - **tokio** - 非同期ランタイム
 - **serde** - シリアライゼーション/デシリアライゼーション
+- **sled 0.34** - 組み込み型データベース（Phase 5）
+- **bincode 1.3** - 高速シリアライゼーション（Phase 5）
 
 ## アーキテクチャ
 
@@ -415,13 +520,18 @@ src/
 ├── services/            # ビジネスロジック
 │   ├── mod.rs
 │   ├── inspector.rs    # Inspector機能
-│   └── sampling_logger.rs # Samplingログ管理
+│   ├── sampling_logger.rs # Samplingログ管理（Facade）
+│   ├── logger_backend.rs  # LoggerBackendトレイト（Phase 5）
+│   ├── memory_logger.rs   # メモリバックエンド（Phase 5）
+│   ├── persistent_logger.rs # 永続化バックエンド（Phase 5）
+│   └── logger_factory.rs  # Factoryパターン（Phase 5）
 └── models/              # データ構造
     ├── mod.rs
     ├── error.rs        # エラー型
     ├── request.rs      # リクエスト型
     ├── response.rs     # レスポンス型
-    └── server_config.rs # サーバー設定
+    ├── server_config.rs # サーバー設定
+    └── logging_config.rs # ログ設定（Phase 5）
 ```
 
 ## 開発

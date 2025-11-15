@@ -52,3 +52,16 @@ args = []
 
 [servers.env]
 # No environment variables required for mock server
+
+# Logging Configuration (Phase 5)
+[logging]
+# Backend type: "memory" or "persistent"
+# - memory: In-memory storage (data lost on restart)
+# - persistent: Disk-based storage using sled (data survives restart)
+backend = "persistent"
+
+# Database path for persistent backend (optional, only used if backend = "persistent")
+db_path = "./data/logs.db"
+
+# Maximum number of logs per server (optional, default: 10000)
+max_logs = 10000

@@ -5,7 +5,6 @@
 /// - resources_read
 /// - prompts_list
 /// - prompts_get
-
 use mcp_inspector_mcp::{
     PromptGetRequest, PromptsListRequest, ResourceReadRequest, ResourcesListRequest,
 };
@@ -105,7 +104,6 @@ mod validation_tests {
                 server: name.to_string(),
             };
             assert!(!request.server.is_empty());
-            assert!(request.server.len() > 0);
         }
     }
 
@@ -155,12 +153,7 @@ mod validation_tests {
     fn test_prompt_name_validation() {
         use std::collections::HashMap;
 
-        let valid_names = vec![
-            "analyze",
-            "analyze_company",
-            "get-data",
-            "simple_prompt",
-        ];
+        let valid_names = vec!["analyze", "analyze_company", "get-data", "simple_prompt"];
 
         for name in valid_names {
             let request = PromptGetRequest {
@@ -176,7 +169,6 @@ mod validation_tests {
 #[cfg(test)]
 mod serialization_tests {
     use super::*;
-    use serde_json;
 
     /// Test ResourcesListRequest JSON serialization
     #[test]

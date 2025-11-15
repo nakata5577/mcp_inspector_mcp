@@ -1,3 +1,4 @@
+use crate::models::LoggingConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -31,6 +32,10 @@ pub struct ServerConfig {
 #[derive(Debug, Deserialize)]
 pub struct InspectorConfig {
     pub servers: Vec<ServerConfig>,
+
+    /// Logging configuration (optional)
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 impl ServerConfig {

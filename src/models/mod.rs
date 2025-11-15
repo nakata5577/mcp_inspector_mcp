@@ -1,9 +1,11 @@
 pub mod error;
+pub mod logging_config;
 pub mod request;
 pub mod response;
 pub mod server_config;
 
 pub use error::{InspectorError, Result};
+pub use logging_config::{LoggingBackend, LoggingConfig};
 pub use request::{
     PromptGetRequest, PromptsListRequest, ResourceReadRequest, ResourcesListRequest,
     SamplingLogsRequest, ToolCallRequest, ToolsListRequest,

@@ -1,39 +1,35 @@
-use crate::models::{SamplingLogEntry, SamplingStatus};
-use std::sync::{Arc, Mutex};
+use crate::models::SamplingLogEntry;
+use crate::services::LoggerBackend;
+use std::sync::Arc;
 
-/// Thread-safe logger for sampling requests and responses
+/// Thread-safe logger wrapper for sampling requests and responses
+///
+/// This is a facade that delegates to a LoggerBackend implementation.
 #[derive(Debug, Clone)]
 pub struct SamplingLogger {
-    /// Internal log storage with thread-safe access
-    logs: Arc<Mutex<Vec<SamplingLogEntry>>>,
-    /// Maximum number of logs to retain (FIFO rotation when exceeded)
-    max_logs: usize,
+    backend: Arc<dyn LoggerBackend>,
 }
 
 impl SamplingLogger {
-    /// Creates a new SamplingLogger with specified maximum capacity
+    /// Creates a new SamplingLogger with the specified backend
     ///
     /// # Arguments
-    ///
-    /// * `max_logs` - Maximum number of log entries to retain before rotation
+    /// * `backend` - The logger backend implementation to use
     ///
     /// # Examples
     ///
     /// ```
-    /// use mcp_inspector_mcp::services::SamplingLogger;
+    /// use mcp_inspector_mcp::services::{SamplingLogger, MemoryLogger};
+    /// use std::sync::Arc;
     ///
-    /// let logger = SamplingLogger::new(1000);
+    /// let backend = Arc::new(MemoryLogger::new(1000));
+    /// let logger = SamplingLogger::new(backend);
     /// ```
-    pub fn new(max_logs: usize) -> Self {
-        Self {
-            logs: Arc::new(Mutex::new(Vec::new())),
-            max_logs,
-        }
+    pub fn new(backend: Arc<dyn LoggerBackend>) -> Self {
+        Self { backend }
     }
 
     /// Adds a new log entry to the logger
-    ///
-    /// If the number of logs exceeds `max_logs`, the oldest entry is removed (FIFO).
     ///
     /// # Arguments
     ///
@@ -42,10 +38,12 @@ impl SamplingLogger {
     /// # Examples
     ///
     /// ```
-    /// use mcp_inspector_mcp::services::SamplingLogger;
+    /// use mcp_inspector_mcp::services::{SamplingLogger, MemoryLogger};
     /// use mcp_inspector_mcp::models::{SamplingLogEntry, SamplingStatus};
+    /// use std::sync::Arc;
     ///
-    /// let logger = SamplingLogger::new(100);
+    /// let backend = Arc::new(MemoryLogger::new(100));
+    /// let logger = SamplingLogger::new(backend);
     /// let entry = SamplingLogEntry {
     ///     id: "test-id".to_string(),
     ///     timestamp: "2025-01-15T12:00:00Z".to_string(),
@@ -60,15 +58,8 @@ impl SamplingLogger {
     /// logger.add_log(entry);
     /// ```
     pub fn add_log(&self, entry: SamplingLogEntry) {
-        let mut logs = self.logs.lock().unwrap();
-
-        // Add new entry
-        logs.push(entry);
-
-        // Perform FIFO rotation if necessary
-        if logs.len() > self.max_logs {
-            logs.remove(0);
-        }
+        // For backward compatibility, ignore errors
+        let _ = self.backend.add_log(entry);
     }
 
     /// Retrieves logs filtered by server name, status, and limited by count
@@ -88,39 +79,18 @@ impl SamplingLogger {
     /// # Examples
     ///
     /// ```
-    /// use mcp_inspector_mcp::services::SamplingLogger;
+    /// use mcp_inspector_mcp::services::{SamplingLogger, MemoryLogger};
+    /// use std::sync::Arc;
     ///
-    /// let logger = SamplingLogger::new(100);
+    /// let backend = Arc::new(MemoryLogger::new(100));
+    /// let logger = SamplingLogger::new(backend);
     /// let logs = logger.get_logs("my-server", 10, "all");
     /// ```
     pub fn get_logs(&self, server_name: &str, limit: usize, status: &str) -> Vec<SamplingLogEntry> {
-        let logs = self.logs.lock().unwrap();
-
-        // Filter by server name (extracted from id field: "server:timestamp")
-        let mut filtered: Vec<SamplingLogEntry> = logs
-            .iter()
-            .filter(|entry| {
-                // Extract server name from ID (format: "server:timestamp")
-                let entry_server = entry.id.split(':').next().unwrap_or("");
-                entry_server == server_name
-            })
-            .filter(|entry| {
-                // Filter by status
-                match status {
-                    "all" => true,
-                    "success" => entry.status == SamplingStatus::Success,
-                    "failed" => entry.status == SamplingStatus::Failed,
-                    _ => true, // Default to all for unknown status
-                }
-            })
-            .cloned()
-            .collect();
-
-        // Sort by timestamp in descending order (newest first)
-        filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        // Apply limit
-        filtered.into_iter().take(limit).collect()
+        // For backward compatibility, return empty vec on error
+        self.backend
+            .get_logs(server_name, limit, status)
+            .unwrap_or_default()
     }
 
     /// Counts the total number of logs for a specific server
@@ -136,29 +106,25 @@ impl SamplingLogger {
     /// # Examples
     ///
     /// ```
-    /// use mcp_inspector_mcp::services::SamplingLogger;
+    /// use mcp_inspector_mcp::services::{SamplingLogger, MemoryLogger};
+    /// use std::sync::Arc;
     ///
-    /// let logger = SamplingLogger::new(100);
+    /// let backend = Arc::new(MemoryLogger::new(100));
+    /// let logger = SamplingLogger::new(backend);
     /// let count = logger.count_logs("my-server");
     /// ```
     pub fn count_logs(&self, server_name: &str) -> usize {
-        let logs = self.logs.lock().unwrap();
-
-        logs.iter()
-            .filter(|entry| {
-                let entry_server = entry.id.split(':').next().unwrap_or("");
-                entry_server == server_name
-            })
-            .count()
+        // For backward compatibility, return 0 on error
+        self.backend.count_logs(server_name).unwrap_or(0)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{SamplingContent, SamplingMessage};
+    use crate::models::{SamplingContent, SamplingMessage, SamplingStatus};
+    use crate::services::MemoryLogger;
 
-    /// Helper function to create a test log entry
     fn create_test_entry(
         server: &str,
         timestamp: &str,
@@ -184,8 +150,25 @@ mod tests {
     }
 
     #[test]
+    fn test_sampling_logger_wrapper() {
+        let backend = Arc::new(MemoryLogger::new(100));
+        let logger = SamplingLogger::new(backend);
+
+        logger.add_log(create_test_entry(
+            "server1",
+            "2025-01-15T12:00:00Z",
+            SamplingStatus::Success,
+        ));
+
+        let logs = logger.get_logs("server1", 10, "all");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logger.count_logs("server1"), 1);
+    }
+
+    #[test]
     fn test_add_and_get_logs() {
-        let logger = SamplingLogger::new(100);
+        let backend = Arc::new(MemoryLogger::new(100));
+        let logger = SamplingLogger::new(backend);
 
         // Add logs for different servers
         logger.add_log(create_test_entry(
@@ -226,7 +209,8 @@ mod tests {
 
     #[test]
     fn test_log_rotation() {
-        let logger = SamplingLogger::new(3); // Small limit for testing
+        let backend = Arc::new(MemoryLogger::new(3));
+        let logger = SamplingLogger::new(backend);
 
         // Add 5 logs (exceeds limit)
         for i in 0..5 {
@@ -254,7 +238,8 @@ mod tests {
 
     #[test]
     fn test_status_filter() {
-        let logger = SamplingLogger::new(100);
+        let backend = Arc::new(MemoryLogger::new(100));
+        let logger = SamplingLogger::new(backend);
 
         // Add logs with different statuses
         logger.add_log(create_test_entry(
@@ -280,17 +265,22 @@ mod tests {
         // Test "success" filter
         let success_logs = logger.get_logs("server1", 10, "success");
         assert_eq!(success_logs.len(), 2);
-        assert!(success_logs.iter().all(|l| l.status == SamplingStatus::Success));
+        assert!(success_logs
+            .iter()
+            .all(|l| l.status == SamplingStatus::Success));
 
         // Test "failed" filter
         let failed_logs = logger.get_logs("server1", 10, "failed");
         assert_eq!(failed_logs.len(), 1);
-        assert!(failed_logs.iter().all(|l| l.status == SamplingStatus::Failed));
+        assert!(failed_logs
+            .iter()
+            .all(|l| l.status == SamplingStatus::Failed));
     }
 
     #[test]
     fn test_limit_parameter() {
-        let logger = SamplingLogger::new(100);
+        let backend = Arc::new(MemoryLogger::new(100));
+        let logger = SamplingLogger::new(backend);
 
         // Add 5 logs
         for i in 0..5 {

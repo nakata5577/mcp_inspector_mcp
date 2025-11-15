@@ -1,11 +1,11 @@
 use crate::client::ClientManager;
 use crate::models::{
-    PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
+    InspectorConfig, PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
     ResourceReadRequest, ResourceReadResponse, ResourcesListRequest, ResourcesListResponse, Result,
-    SamplingLogsRequest, SamplingLogsResponse, ServerConfig, ToolCallRequest, ToolCallResponse,
+    SamplingLogsRequest, SamplingLogsResponse, ToolCallRequest, ToolCallResponse,
     ToolsListResponse,
 };
-use crate::services::SamplingLogger;
+use crate::services::{create_logger, SamplingLogger};
 use anyhow::Context;
 use std::sync::Arc;
 
@@ -17,16 +17,29 @@ pub struct InspectorService {
 }
 
 impl InspectorService {
-    /// Create a new InspectorService with the given server configurations
-    pub fn new(configs: Vec<ServerConfig>) -> Self {
-        let sampling_logger = Arc::new(SamplingLogger::new(1000));
-        Self {
+    /// Create a new InspectorService with the given configuration
+    ///
+    /// # Arguments
+    /// * `config` - Inspector configuration including server configs and logging settings
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Logging configuration is invalid
+    /// - Logger backend cannot be created
+    pub fn new(config: InspectorConfig) -> anyhow::Result<Self> {
+        // Create logger backend from configuration
+        let logger_backend =
+            create_logger(&config.logging).context("Failed to create logger backend")?;
+
+        let sampling_logger = Arc::new(SamplingLogger::new(logger_backend));
+
+        Ok(Self {
             client_manager: Arc::new(ClientManager::new(
-                configs,
+                config.servers,
                 Arc::clone(&sampling_logger),
             )),
             sampling_logger,
-        }
+        })
     }
 
     /// List all tools available on the specified server
@@ -74,7 +87,10 @@ impl InspectorService {
     }
 
     /// List all resources available on the specified server
-    pub async fn list_resources(&self, request: ResourcesListRequest) -> Result<ResourcesListResponse> {
+    pub async fn list_resources(
+        &self,
+        request: ResourcesListRequest,
+    ) -> Result<ResourcesListResponse> {
         let client = self
             .client_manager
             .get_client(&request.server)
@@ -93,7 +109,10 @@ impl InspectorService {
     }
 
     /// Read a specific resource from the specified server
-    pub async fn read_resource(&self, request: ResourceReadRequest) -> Result<ResourceReadResponse> {
+    pub async fn read_resource(
+        &self,
+        request: ResourceReadRequest,
+    ) -> Result<ResourceReadResponse> {
         let client = self
             .client_manager
             .get_client(&request.server)
@@ -164,12 +183,13 @@ impl InspectorService {
     /// # Returns
     ///
     /// A response containing the filtered logs and total count
-    pub async fn sampling_logs(&self, request: SamplingLogsRequest) -> Result<SamplingLogsResponse> {
-        let logs = self.sampling_logger.get_logs(
-            &request.server,
-            request.limit,
-            &request.status,
-        );
+    pub async fn sampling_logs(
+        &self,
+        request: SamplingLogsRequest,
+    ) -> Result<SamplingLogsResponse> {
+        let logs = self
+            .sampling_logger
+            .get_logs(&request.server, request.limit, &request.status);
 
         let total_count = self.sampling_logger.count_logs(&request.server);
 
