@@ -73,17 +73,63 @@ AIエージェント (Claude Desktop)
 cargo build --release
 ```
 
-### 2. 環境変数設定
+### 2. 設定方法 ⚙️
 
-MCP Inspector MCPは、環境変数で設定を管理します。シングルバイナリ配布が可能で、セットアップが簡素化されます。
+MCP Inspector MCPは、**CLI引数方式**（推奨）と**環境変数方式**（後方互換性）の2つの設定方法をサポートしています。
 
-#### 必須環境変数
+#### 方式A: CLI引数方式（推奨） 🌟
+
+DSL形式で直感的に設定できます。エスケープ不要で読みやすく、`.mcp.json`で簡単に管理できます。
+
+**DSL形式:**
+```
+name:transport:command[:arg1:arg2:...]
+```
+
+**構成要素:**
+- `name`: サーバー識別名（任意の文字列）
+- `transport`: トランスポートタイプ（現在は`stdio`のみ対応）
+- `command`: 実行可能ファイルのパス
+- `arg1, arg2, ...`: サーバーに渡す引数（オプション）
+
+**例:**
+```bash
+# 引数なし
+--server "fundamental_analysis:stdio:C:/path/to/fa.exe"
+
+# 引数あり
+--server "technical_analysis:stdio:/path/to/ta.exe:--verbose:--debug"
+
+# Windowsパス（自動検出）
+--server "my_server:stdio:D:/tools/server.exe:--port:8080"
+```
+
+**注意事項:**
+- Windowsパス（`C:/...`、`D:/...`等）は自動検出されます
+- トランスポートタイプは大文字小文字を区別しません（`stdio`, `STDIO`, `Stdio`すべて可）
+- コロン(`:`)区切りのため、引数値にコロンを含めることはできません
+- 複数サーバーを登録する場合は、`--server`を複数回指定します
+
+**CLI引数リファレンス:**
+
+| 引数 | 説明 | 例 |
+|------|------|-----|
+| `-s, --server <DSL>` | サーバー設定（複数指定可能） | `--server "fa:stdio:C:/path/to/fa.exe"` |
+| `--log-backend <TYPE>` | ログバックエンド（`memory`/`persistent`） | `--log-backend persistent` |
+| `--log-path <PATH>` | DBパス（persistent時） | `--log-path ./data/logs.db` |
+| `--log-max-logs <NUM>` | 最大ログ数 | `--log-max-logs 20000` |
+
+#### 方式B: 環境変数方式（後方互換性） 📋
+
+既存の設定方法として環境変数も引き続きサポートされます。
+
+**必須環境変数:**
 
 | 環境変数名 | 型 | 説明 | 例 |
 |-----------|-----|------|-----|
 | `MCP_INSPECTOR_SERVERS` | JSON配列 | 検査対象サーバーのリスト | `[{"name":"server1",...}]` |
 
-#### オプション環境変数（ログ設定）
+**オプション環境変数（ログ設定）:**
 
 | 環境変数名 | デフォルト | 説明 |
 |-----------|-----------|------|
@@ -107,6 +153,17 @@ MCP Inspector MCPは、環境変数で設定を管理します。シングルバ
 ]
 ```
 
+#### 設定方式の比較
+
+| 項目 | CLI引数方式 | 環境変数方式 |
+|------|-----------|------------|
+| 読みやすさ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| エスケープ | 不要 | 必要（`\"`） |
+| 複数サーバー | `--server`を複数回 | JSON配列 |
+| 推奨用途 | 通常使用 | 後方互換性 |
+
+**設定優先順位:** CLI引数 > 環境変数 > デフォルト値
+
 ### 3. Claude Desktopへの登録
 
 Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加：
@@ -116,7 +173,55 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
-#### Windows版設定例:
+#### 方式A: CLI引数方式（推奨） 🌟
+
+エスケープ不要で読みやすい設定ができます。
+
+**Windows版設定例:**
+
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe",
+      "args": [
+        "--server", "fundamental_analysis:stdio:C:/path/to/fa.exe",
+        "--server", "technical_analysis:stdio:C:/path/to/ta.exe:--verbose",
+        "--log-backend", "persistent",
+        "--log-path", "./data/logs.db"
+      ]
+    }
+  }
+}
+```
+
+**macOS/Linux版設定例:**
+
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "/path/to/mcp_inspector_mcp",
+      "args": [
+        "--server", "fundamental_analysis:stdio:/usr/local/bin/fa",
+        "--server", "technical_analysis:stdio:/usr/local/bin/ta:--debug",
+        "--log-backend", "memory"
+      ]
+    }
+  }
+}
+```
+
+**注意事項（CLI引数方式）:**
+- `command`パスのバックスラッシュ(`\`)は`\\`にエスケープが必要
+- `args`配列内のDSL文字列はエスケープ不要
+- 複数サーバーは`--server`を繰り返す
+
+#### 方式B: 環境変数方式（後方互換性） 📋
+
+既存の設定方法として引き続き利用可能です。
+
+**Windows版設定例:**
 
 ```json
 {
@@ -134,12 +239,7 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 }
 ```
 
-**注意事項:**
-- Windowsの場合、パスの`\`は`\\`にエスケープしてください
-- JSON内のダブルクォートは`\"`でエスケープしてください
-- `command`パス内では`/`（スラッシュ）も使用可能です
-
-#### macOS/Linux版設定例:
+**macOS/Linux版設定例:**
 
 ```json
 {
@@ -155,6 +255,11 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
   }
 }
 ```
+
+**注意事項（環境変数方式）:**
+- Windowsの場合、パスの`\`は`\\`にエスケープしてください
+- JSON内のダブルクォートは`\"`でエスケープしてください
+- `command`パス内では`/`（スラッシュ）も使用可能です
 
 ### 4. ログバックエンドの選択
 
@@ -625,14 +730,48 @@ Claude Desktopから以下のように使用します：
 
 ### 設定が見つからない
 
-**エラー:** "MCP_INSPECTOR_SERVERS environment variable not set"
+**エラー:** "No server configuration provided. Use --server or MCP_INSPECTOR_SERVERS env var"
 
 **解決策:**
-1. `MCP_INSPECTOR_SERVERS`環境変数が設定されているか確認
-2. Claude Desktop設定ファイル（`claude_desktop_config.json`）の`env`セクションを確認
+1. **CLI引数方式を使用している場合:**
+   - `claude_desktop_config.json`の`args`配列に`--server`引数が含まれているか確認
+   - DSL形式が正しいか確認（`name:transport:command`の3要素が必須）
+2. **環境変数方式を使用している場合:**
+   - `MCP_INSPECTOR_SERVERS`環境変数が設定されているか確認
+   - Claude Desktop設定ファイルの`env`セクションを確認
 3. Claude Desktopを完全に再起動
 
-### JSONパースエラー
+### DSL形式のエラー
+
+**エラー:** "Invalid DSL format (expected name:transport:command[:args...])"
+
+**解決策:**
+1. DSL形式が正しいか確認: `name:transport:command`の3つの要素が必須
+2. コロン(`:`)で正しく区切られているか確認
+3. トランスポートタイプが`stdio`であることを確認
+4. パスに空白が含まれる場合でもエスケープ不要（そのまま記述）
+
+**正しい例:**
+```
+fundamental_analysis:stdio:C:/path/to/fa.exe
+technical_analysis:stdio:/usr/local/bin/ta:--verbose
+```
+
+**誤った例:**
+```
+fa:C:/path/to/fa.exe              # transportが欠落
+fa:http:/path/to/fa.exe           # httpは未サポート
+fa:stdio                          # commandが欠落
+```
+
+**エラー:** "Unsupported transport type"
+
+**解決策:**
+1. 現在サポートされているのは`stdio`のみです
+2. トランスポートタイプ部分を`stdio`に変更してください
+3. 大文字小文字は区別されません（`stdio`, `STDIO`, `Stdio`すべて可）
+
+### JSONパースエラー（環境変数方式）
 
 **エラー:** "Failed to parse MCP_INSPECTOR_SERVERS as JSON array"
 
@@ -650,9 +789,12 @@ Claude Desktopから以下のように使用します：
 **エラー:** "Server not found: xxx"
 
 **解決策:**
-1. `MCP_INSPECTOR_SERVERS`環境変数内でサーバーが定義されているか確認
-2. サーバー名のスペルミスがないか確認
-3. JSON配列のフォーマットが正しいか確認
+1. **CLI引数方式:**
+   - `args`配列内の`--server`引数でサーバーが定義されているか確認
+   - サーバー名（DSL形式の最初の部分）のスペルミスがないか確認
+2. **環境変数方式:**
+   - `MCP_INSPECTOR_SERVERS`環境変数内でサーバーが定義されているか確認
+   - JSON配列のフォーマットが正しいか確認
 
 ### 接続エラー
 

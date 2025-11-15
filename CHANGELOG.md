@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - CLI引数方式の設定サポート
+
+#### 🌟 新機能: CLI引数によるサーバー設定
+
+**CLI引数方式のサーバー設定**
+- `--server`フラグによるDSL形式の設定: `name:transport:command[:args...]`
+- 複数サーバーの登録: `--server`を複数回指定
+- エスケープ不要で読みやすい設定
+- Windowsパスの自動検出（`C:/...`、`D:/...`等）
+- 大文字小文字を区別しないトランスポート指定（`stdio`, `STDIO`, `Stdio`）
+
+**DSL形式の詳細:**
+```bash
+# 基本形式
+--server "name:transport:command[:arg1:arg2:...]"
+
+# 例
+--server "fa:stdio:C:/path/to/fa.exe"
+--server "ta:stdio:/usr/local/bin/ta:--verbose:--debug"
+```
+
+**ログ設定のCLI引数サポート**
+- `--log-backend <TYPE>`: ログバックエンド（`memory`/`persistent`）
+- `--log-path <PATH>`: データベースパス（persistent時）
+- `--log-max-logs <NUM>`: 最大ログ数
+
+**設定優先順位:** CLI引数 > 環境変数 > デフォルト値
+
+#### 実装詳細
+
+**新規実装:**
+- `src/main.rs`: `Cli`構造体の追加（clap 4.x使用）
+  - `servers: Vec<String>`: DSL形式のサーバー設定
+  - `log_backend: Option<String>`: ログバックエンド指定
+  - `log_path: Option<String>`: DBパス指定
+  - `log_max_logs: Option<usize>`: 最大ログ数指定
+- `src/models/server_config.rs`: `ServerConfig::from_dsl()`メソッド追加
+  - DSL文字列のパース処理
+  - Windowsパス自動検出ロジック
+  - トランスポートタイプのバリデーション
+- `src/main.rs`: 設定ロード関数
+  - `load_server_configs()`: CLI引数 > 環境変数の優先順位制御
+  - `load_logging_config()`: ログ設定の優先順位制御
+
+**テスト:**
+- `src/models/server_config.rs`: DSL形式のパーステスト（10件追加）
+  - 基本形式のパース
+  - 引数付きパース
+  - Windowsパスの処理
+  - 大文字小文字の処理
+  - エラーケース（不正形式、未サポートtransport）
+
+**全テスト合格:** ✅
+
+#### ドキュメント更新
+
+**README.md:**
+- 「2. 設定方法」セクションを刷新
+  - 方式A: CLI引数方式（推奨）の説明追加
+  - 方式B: 環境変数方式（後方互換性）として整理
+  - 設定方式の比較表を追加
+  - DSL形式の詳細説明
+  - CLI引数リファレンステーブル
+- 「3. Claude Desktopへの登録」セクションを更新
+  - CLI引数方式の`.mcp.json`設定例追加（Windows/macOS/Linux）
+  - 環境変数方式の設定例も維持（後方互換性）
+- トラブルシューティングセクションを拡張
+  - DSL形式のエラー対処法
+  - 設定方式別のトラブルシューティング
+
+**CHANGELOG.md:** 本エントリを追加
+
+#### 使用例
+
+**Claude Desktop設定（CLI引数方式）:**
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "C:\\path\\to\\mcp_inspector_mcp.exe",
+      "args": [
+        "--server", "fundamental_analysis:stdio:C:/path/to/fa.exe",
+        "--server", "technical_analysis:stdio:C:/path/to/ta.exe:--verbose",
+        "--log-backend", "persistent",
+        "--log-path", "./data/logs.db"
+      ]
+    }
+  }
+}
+```
+
+**利点:**
+- エスケープ不要でJSON構文エラーのリスク低減
+- 複数サーバーの設定が明確で読みやすい
+- 設定ファイルの保守性向上
+- Windowsユーザーの設定が容易
+
+### Changed
+
+**後方互換性の維持:**
+- 環境変数方式（`MCP_INSPECTOR_SERVERS`）は引き続きサポート
+- 既存の設定ファイルはそのまま動作
+- CLI引数が指定されていない場合、自動的に環境変数にフォールバック
+
+### Dependencies
+
+**追加:**
+- `clap 4.x`（derive feature付き）: CLI引数パース
+
+---
+
 ## [0.2.0] - 2025-11-15
 
 ### Added - Phase 7: 環境変数ベース設定管理

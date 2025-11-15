@@ -21,6 +21,9 @@ pub enum InspectorError {
     #[error("Invalid arguments for tool '{tool}': {message}")]
     InvalidArguments { tool: String, message: String },
 
+    #[error("Configuration error: {0}")]
+    Config(String),
+
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 
