@@ -38,7 +38,7 @@ AIエージェント (Claude Desktop)
 - ✅ LoggerBackend抽象化 - トレイトベースの統一インターフェース
 - ✅ MemoryLogger - 高速インメモリストレージ
 - ✅ PersistentLogger - sled永続化バックエンド
-- ✅ 設定ベースの切替 - config/servers.tomlでバックエンド選択
+- ✅ 設定ベースの切替 - 環境変数でバックエンド選択
 
 ### Phase 5後半 - 実装済み 🚀
 - ✅ 接続プーリング - MCPクライアント接続の再利用による高速化
@@ -73,95 +73,133 @@ AIエージェント (Claude Desktop)
 cargo build --release
 ```
 
-### 2. 設定ファイルの作成
+### 2. 環境変数設定
 
-`config/servers.toml`で検査対象のMCPサーバーを定義します：
+MCP Inspector MCPは、環境変数で設定を管理します。シングルバイナリ配布が可能で、セットアップが簡素化されます。
 
-```toml
-[[servers]]
-name = "my-server"
-transport = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"]
+#### 必須環境変数
 
-[servers.env]
-# 環境変数があれば追加
+| 環境変数名 | 型 | 説明 | 例 |
+|-----------|-----|------|-----|
+| `MCP_INSPECTOR_SERVERS` | JSON配列 | 検査対象サーバーのリスト | `[{"name":"server1",...}]` |
+
+#### オプション環境変数（ログ設定）
+
+| 環境変数名 | デフォルト | 説明 |
+|-----------|-----------|------|
+| `MCP_LOGGING_BACKEND` | "memory" | ログバックエンド（"memory" or "persistent"） |
+| `MCP_LOGGING_DB_PATH` | "./data/logs.db" | DBパス（persistent時必須） |
+| `MCP_LOGGING_MAX_LOGS` | 10000 | サーバーごとの最大ログ数 |
+
+**JSON設定フォーマット:**
+
+```json
+[
+  {
+    "name": "my-server",
+    "transport": "stdio",
+    "command": "/path/to/executable",
+    "args": ["arg1", "arg2"],
+    "env": {
+      "ENV_VAR": "value"
+    }
+  }
+]
 ```
 
 ### 3. Claude Desktopへの登録
 
 Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加：
 
-**Windows:**
-`%APPDATA%\Claude\claude_desktop_config.json`
+**設定ファイルの場所:**
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
-**macOS:**
-`~/Library/Application Support/Claude/claude_desktop_config.json`
+#### Windows版設定例:
 
 ```json
 {
   "mcpServers": {
     "mcp-inspector": {
-      "command": "C:\path\to\mcp_inspector_mcp\target\release\mcp_inspector_mcp.exe",
-      "args": [],
+      "command": "C:\\path\\to\\mcp_inspector_mcp.exe",
       "env": {
-        "MCP_INSPECTOR_CONFIG": "C:\path\to\mcp_inspector_mcp\config\servers.toml"
+        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"C:/path/to/server.exe\",\"args\":[]}]",
+        "MCP_LOGGING_BACKEND": "persistent",
+        "MCP_LOGGING_DB_PATH": "./data/logs.db",
+        "RUST_LOG": "info"
       }
     }
   }
 }
 ```
 
-**注意:** Windowsの場合、パスの`\`を`\`にエスケープしてください。
+**注意事項:**
+- Windowsの場合、パスの`\`は`\\`にエスケープしてください
+- JSON内のダブルクォートは`\"`でエスケープしてください
+- `command`パス内では`/`（スラッシュ）も使用可能です
 
-### 4. ログバックエンドの設定（Phase 5）
+#### macOS/Linux版設定例:
 
-MCP Inspector MCPは、2種類のログストレージバックエンドをサポートしています。
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "/path/to/mcp_inspector_mcp",
+      "env": {
+        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"/path/to/server\",\"args\":[]}]",
+        "MCP_LOGGING_BACKEND": "memory",
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}
+```
+
+### 4. ログバックエンドの選択
 
 #### Memory Backend（デフォルト）
 
 メモリ内にログを保存します。サーバー再起動でログが消失しますが、高速な読み書きが可能です。開発・テスト環境に最適です。
 
-```toml
-[logging]
-backend = "memory"
-max_logs = 10000
+```json
+{
+  "env": {
+    "MCP_LOGGING_BACKEND": "memory",
+    "MCP_LOGGING_MAX_LOGS": "10000"
+  }
+}
 ```
 
 #### Persistent Backend
 
 sledデータベースを使用してディスクに保存します。サーバー再起動後もログを保持でき、大量のログを長期保存可能です。本番環境に推奨します。
 
-```toml
-[logging]
-backend = "persistent"
-db_path = "./data/logs.db"
-max_logs = 10000
+**データベースディレクトリの準備:**
+```bash
+mkdir -p ./data
 ```
 
-**設定項目:**
-
-| 項目 | 型 | 必須 | デフォルト | 説明 |
-|------|----|----|-----------|------|
-| `backend` | string | No | "memory" | バックエンドタイプ（"memory"または"persistent"） |
-| `db_path` | string | Conditional | - | データベースファイルパス（persistentの場合必須） |
-| `max_logs` | integer | No | 10000 | サーバーごとの最大ログ数 |
+**設定例:**
+```json
+{
+  "env": {
+    "MCP_LOGGING_BACKEND": "persistent",
+    "MCP_LOGGING_DB_PATH": "./data/logs.db",
+    "MCP_LOGGING_MAX_LOGS": "10000"
+  }
+}
+```
 
 **ログローテーション:**
-- 各サーバーごとに`max_logs`で指定した件数までログを保存
+- 各サーバーごとに`MCP_LOGGING_MAX_LOGS`で指定した件数までログを保存
 - 上限を超えると、古いログから自動削除（FIFO方式）
 
 **ストレージサイズの目安:**
 - メモリ: 10,000件あたり約10-20MB
 - ディスク: 10,000件あたり約5-10MB（sled圧縮済み）
 
-**データベースディレクトリの準備:**
-
-Persistent backendを使用する場合は、事前にディレクトリを作成してください：
-
-```bash
-mkdir -p ./data
-```
+---
 
 ## パフォーマンス特性（Phase 5後半）
 
@@ -260,7 +298,7 @@ Claude Desktopから以下のように使用します：
 対象MCPサーバーが提供するツールの一覧を取得します。
 
 **引数:**
-- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+- `server` (string, required): 対象サーバー名（環境変数で定義）
 
 **戻り値:**
 ```json
@@ -442,7 +480,7 @@ Claude Desktopから以下のように使用します：
 対象MCPサーバーの設定情報と機能を詳細に取得します。
 
 **引数:**
-- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+- `server` (string, required): 対象サーバー名（環境変数で定義）
 
 **戻り値:**
 ```json
@@ -490,7 +528,7 @@ Claude Desktopから以下のように使用します：
 対象MCPサーバーのヘルスチェックを実行し、疎通確認とパフォーマンス測定を行います。
 
 **引数:**
-- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+- `server` (string, required): 対象サーバー名（環境変数で定義）
 
 **戻り値:**
 ```json
@@ -529,7 +567,7 @@ Claude Desktopから以下のように使用します：
 対象MCPサーバーから送信されるログメッセージを取得します。MonitoringTransportが`notifications/message`通知を自動検出し、ログを記録します。
 
 **引数:**
-- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+- `server` (string, required): 対象サーバー名（環境変数で定義）
 - `level` (string, optional): 最小ログレベル（"debug", "info", "warning", "error"等）
 - `limit` (integer, optional): 取得するログの最大件数（デフォルト: 100）
 - `since` (string, optional): 開始時刻（RFC3339形式、この時刻以降のログを取得）
@@ -585,13 +623,36 @@ Claude Desktopから以下のように使用します：
 
 ## トラブルシューティング
 
+### 設定が見つからない
+
+**エラー:** "MCP_INSPECTOR_SERVERS environment variable not set"
+
+**解決策:**
+1. `MCP_INSPECTOR_SERVERS`環境変数が設定されているか確認
+2. Claude Desktop設定ファイル（`claude_desktop_config.json`）の`env`セクションを確認
+3. Claude Desktopを完全に再起動
+
+### JSONパースエラー
+
+**エラー:** "Failed to parse MCP_INSPECTOR_SERVERS as JSON array"
+
+**解決策:**
+1. JSON形式が正しいか検証（オンラインJSONバリデータの使用を推奨）
+2. ダブルクォートのエスケープを確認（`\"`）
+3. 特殊文字（バックスラッシュ等）の二重エスケープに注意
+4. 以下の最小構成で動作確認:
+   ```json
+   [{"name":"test","transport":"stdio","command":"echo","args":[]}]
+   ```
+
 ### サーバーが見つからない
 
 **エラー:** "Server not found: xxx"
 
 **解決策:**
-1. `config/servers.toml`に対象サーバーが定義されているか確認
+1. `MCP_INSPECTOR_SERVERS`環境変数内でサーバーが定義されているか確認
 2. サーバー名のスペルミスがないか確認
+3. JSON配列のフォーマットが正しいか確認
 
 ### 接続エラー
 
@@ -647,7 +708,7 @@ Windows環境でのstdio通信制約。実装自体は正しく、以下が検�
 #### データベースファイルが作成されない
 
 **解決策:**
-1. `db_path`で指定したディレクトリが存在するか確認
+1. `MCP_LOGGING_DB_PATH`で指定したディレクトリが存在するか確認
    ```bash
    # Windowsの場合
    mkdir data
@@ -660,8 +721,8 @@ Windows環境でのstdio通信制約。実装自体は正しく、以下が検�
 #### ログが保存されない
 
 **解決策:**
-1. `config/servers.toml`の`[logging]`セクションを確認
-2. `backend = "persistent"`の場合、`db_path`が設定されているか確認
+1. `MCP_LOGGING_BACKEND`環境変数を確認
+2. `backend = "persistent"`の場合、`MCP_LOGGING_DB_PATH`が設定されているか確認
 3. ログ出力で使用中のバックエンドを確認:
    ```
    INFO Creating persistent logger (db_path: ./data/logs.db, max_logs: 10000)
@@ -674,7 +735,7 @@ Windows環境でのstdio通信制約。実装自体は正しく、以下が検�
 #### ディスク容量不足
 
 **解決策:**
-1. `max_logs`を減らす（例: 10000 → 5000）
+1. `MCP_LOGGING_MAX_LOGS`を減らす（例: 10000 → 5000）
 2. 古いログデータベースを削除:
    ```bash
    # Windowsの場合
@@ -687,7 +748,7 @@ Windows環境でのstdio通信制約。実装自体は正しく、以下が検�
 
 **原因と対策:**
 - Persistent backendはMemory backendより約2倍遅い（500-1000件/秒 vs 1000件/秒以上）
-- 開発・テスト環境では`backend = "memory"`を使用
+- 開発・テスト環境では`MCP_LOGGING_BACKEND=memory`を使用
 - 本番環境でログの永続化が必要な場合のみPersistentを使用
 
 ### ログの確認

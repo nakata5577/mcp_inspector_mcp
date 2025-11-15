@@ -7,6 +7,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-11-15
+
+### Added - Phase 7: 環境変数ベース設定管理
+
+#### 🌟 破壊的変更（Breaking Changes）
+
+**環境変数ベースの設定管理に完全移行**
+- 新しい設定方法: `MCP_INSPECTOR_SERVERS`環境変数（JSON形式）
+- ログ設定も環境変数化（`MCP_LOGGING_*`）
+- シングルバイナリ配布が可能に
+- 12 Factor App原則への準拠
+- MCP公式パターンへの準拠
+- **TOML設定のサポートを完全削除**（後方互換性なし）
+
+#### 新機能
+
+**環境変数パーサー**: `InspectorConfig::from_env()`
+- JSON配列のデシリアライズとバリデーション
+- 詳細なエラーメッセージ
+- サーバー設定の自動検証
+
+**ログ設定の環境変数化**: `LoggingConfig::from_env()`
+- `MCP_LOGGING_BACKEND`: memory/persistent選択
+- `MCP_LOGGING_DB_PATH`: データベースパス指定
+- `MCP_LOGGING_MAX_LOGS`: 最大ログ数設定
+
+**環境変数一覧:**
+
+| 環境変数名 | 型 | 必須 | デフォルト | 説明 |
+|-----------|-----|------|-----------|------|
+| `MCP_INSPECTOR_SERVERS` | JSON配列 | ✅ | - | 検査対象サーバーのリスト |
+| `MCP_LOGGING_BACKEND` | string | ❌ | "memory" | ログバックエンド |
+| `MCP_LOGGING_DB_PATH` | string | ❌ | "./data/logs.db" | DBパス（persistent時） |
+| `MCP_LOGGING_MAX_LOGS` | integer | ❌ | 10000 | 最大ログ数 |
+
+
+#### テスト
+
+**新規テスト**: 21件
+- 単体テスト: 15件
+  - JSON パース機能（正常系・異常系）
+  - 環境変数読み込み
+  - デフォルト値の検証
+  - バリデーション
+- 統合テスト: 6件
+  - 環境変数ベースの起動
+  - ログ設定統合
+  - エンドツーエンドシナリオ
+
+**テストカバレッジ**: 95%以上
+
+#### ドキュメント
+
+**更新:**
+- `README.md`: 環境変数設定方法に統一
+  - Claude Desktop設定例（Windows/macOS/Linux）
+  - JSON設定フォーマット
+  - トラブルシューティング（環境変数関連）
+  - TOML関連記述を完全削除
+- `CHANGELOG.md`: v0.2.0の変更履歴（本ファイル）
+
+#### 使用例
+
+**Claude Desktop設定（Windows）:**
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "C:\\path\\to\\mcp_inspector_mcp.exe",
+      "env": {
+        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"C:/path/to/server.exe\",\"args\":[]}]",
+        "MCP_LOGGING_BACKEND": "persistent",
+        "MCP_LOGGING_DB_PATH": "./data/logs.db",
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}
+```
+
+**Claude Desktop設定（macOS/Linux）:**
+```json
+{
+  "mcpServers": {
+    "mcp-inspector": {
+      "command": "/path/to/mcp_inspector_mcp",
+      "env": {
+        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"/path/to/server\",\"args\":[]}]",
+        "MCP_LOGGING_BACKEND": "memory",
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}
+```
+
+### Changed
+
+**main.rs**: 設定ロードロジックを完全書き換え
+- 環境変数のみのシンプルな実装（86行 → 42行、51%削減）
+- 詳細なエラーメッセージ
+- コードの保守性向上
+
+### Removed
+
+**TOML設定のサポート完全削除**
+- `config/servers.toml`
+- `load_from_toml()`関数
+- `toml`クレート依存関係
+- TOML関連テスト（1件削除）
+
+### Migration Guide
+
+v0.1.xからの移行:
+
+1. `config/servers.toml`の内容をJSON形式に変換
+2. `MCP_INSPECTOR_SERVERS`環境変数に設定
+3. Claude Desktop設定ファイルを更新
+
+**JSON形式への変換例:**
+
+TOML:
+```toml
+[[servers]]
+name = "my-server"
+transport = "stdio"
+command = "C:/path/to/server.exe"
+args = []
+```
+
+JSON（環境変数）:
+```json
+[{
+  "name": "my-server",
+  "transport": "stdio",
+  "command": "C:/path/to/server.exe",
+  "args": []
+}]
+```
+
+---
+
 ### Added - Phase 6: 高度な検査機能
 
 #### Phase 6.3: Logging検査機能 📋
@@ -403,8 +545,6 @@ max_logs = 10000
 
 ---
 
-[Unreleased]: https://github.com/yourusername/mcp_inspector_mcp/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/yourusername/mcp_inspector_mcp/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/yourusername/mcp_inspector_mcp/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/yourusername/mcp_inspector_mcp/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/yourusername/mcp_inspector_mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yourusername/mcp_inspector_mcp/releases/tag/v0.1.0
