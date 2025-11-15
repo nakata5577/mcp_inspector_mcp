@@ -316,8 +316,8 @@ impl LoggerBackend for PersistentLogger {
             let (_key, value) = item.context("Failed to read log message entry")?;
 
             // Deserialize entry
-            let entry: LogEntry = serde_json::from_slice(&value)
-                .context("Failed to deserialize log message")?;
+            let entry: LogEntry =
+                serde_json::from_slice(&value).context("Failed to deserialize log message")?;
 
             // Apply level filter (minimum level)
             if let Some(min_level) = level {
@@ -334,10 +334,7 @@ impl LoggerBackend for PersistentLogger {
                     }
                 } else {
                     // Skip entries with invalid timestamps
-                    warn!(
-                        "Invalid timestamp in log entry: {}",
-                        entry.timestamp
-                    );
+                    warn!("Invalid timestamp in log entry: {}", entry.timestamp);
                     continue;
                 }
             }

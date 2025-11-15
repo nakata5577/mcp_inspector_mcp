@@ -157,12 +157,7 @@ impl ResponseCache {
     /// * `server` - The server name
     /// * `resources` - The resources to cache
     /// * `ttl` - The time-to-live for this cache entry
-    pub async fn set_resources(
-        &self,
-        server: String,
-        resources: Vec<ResourceInfo>,
-        ttl: Duration,
-    ) {
+    pub async fn set_resources(&self, server: String, resources: Vec<ResourceInfo>, ttl: Duration) {
         let mut cache = self.resources.write().await;
 
         cache.insert(server.clone(), CachedResponse::new(resources, ttl));
@@ -257,10 +252,7 @@ impl ResponseCache {
         resources.clear();
         prompts.clear();
 
-        tracing::debug!(
-            entries_removed = total_removed,
-            "Invalidated all caches"
-        );
+        tracing::debug!(entries_removed = total_removed, "Invalidated all caches");
     }
 
     /// Get cache statistics
@@ -297,7 +289,11 @@ mod tests {
         }];
 
         cache
-            .set_tools("server1".to_string(), tools.clone(), Duration::from_secs(60))
+            .set_tools(
+                "server1".to_string(),
+                tools.clone(),
+                Duration::from_secs(60),
+            )
             .await;
 
         let cached_tools = cache.get_tools("server1").await;
@@ -349,7 +345,11 @@ mod tests {
         }];
 
         cache
-            .set_tools("server1".to_string(), tools.clone(), Duration::from_secs(60))
+            .set_tools(
+                "server1".to_string(),
+                tools.clone(),
+                Duration::from_secs(60),
+            )
             .await;
 
         cache.invalidate("server1").await;
@@ -369,10 +369,18 @@ mod tests {
         }];
 
         cache
-            .set_tools("server1".to_string(), tools.clone(), Duration::from_secs(60))
+            .set_tools(
+                "server1".to_string(),
+                tools.clone(),
+                Duration::from_secs(60),
+            )
             .await;
         cache
-            .set_tools("server2".to_string(), tools.clone(), Duration::from_secs(60))
+            .set_tools(
+                "server2".to_string(),
+                tools.clone(),
+                Duration::from_secs(60),
+            )
             .await;
 
         let (tools_count, _, _) = cache.stats().await;

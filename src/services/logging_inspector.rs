@@ -196,7 +196,10 @@ mod tests {
         })?;
 
         assert_eq!(response.total_count, 2); // Warning and Error only
-        assert!(response.messages.iter().all(|m| m.level >= LogLevel::Warning));
+        assert!(response
+            .messages
+            .iter()
+            .all(|m| m.level >= LogLevel::Warning));
 
         Ok(())
     }

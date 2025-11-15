@@ -1,7 +1,7 @@
 use crate::client::{McpClient, StdioClient};
 use crate::models::{
-    ConnectionStatus, PromptCapabilityInfo, ResourceCapabilityInfo, Result,
-    ServerCapabilitiesInfo, ServerImplementation, ServerInspectResponse, ToolCapabilityInfo,
+    ConnectionStatus, PromptCapabilityInfo, ResourceCapabilityInfo, Result, ServerCapabilitiesInfo,
+    ServerImplementation, ServerInspectResponse, ToolCapabilityInfo,
 };
 use std::sync::Arc;
 
@@ -82,9 +82,7 @@ impl ServerInfoService {
     ///
     /// This method converts the rmcp capability structure into our simplified
     /// representation, checking for the presence of each capability.
-    fn parse_capabilities(
-        caps: &rmcp::model::ServerCapabilities,
-    ) -> ServerCapabilitiesInfo {
+    fn parse_capabilities(caps: &rmcp::model::ServerCapabilities) -> ServerCapabilitiesInfo {
         ServerCapabilitiesInfo {
             logging: caps.logging.is_some(),
             experimental: caps.experimental.is_some(),

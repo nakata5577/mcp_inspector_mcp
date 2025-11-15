@@ -525,9 +525,11 @@ impl InspectorService {
             .context("Failed to get stdio client")?;
 
         // Retrieve server information using ServerInfoService
-        Ok(ServerInfoService::get_server_info(client, server_name.to_string())
-            .await
-            .context("Failed to get server information")?)
+        Ok(
+            ServerInfoService::get_server_info(client, server_name.to_string())
+                .await
+                .context("Failed to get server information")?,
+        )
     }
 
     /// Perform a health check on the specified server

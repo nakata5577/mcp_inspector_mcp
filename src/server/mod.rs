@@ -529,10 +529,10 @@ impl ServerHandler for InspectorServer {
 
                 let params: Parameters<ServerInspectParams> = serde_json::from_value(params_value)
                     .map_err(|e| McpError {
-                    code: ErrorCode(-32602),
-                    message: format!("Invalid parameters: {}", e).into(),
-                    data: None,
-                })?;
+                        code: ErrorCode(-32602),
+                        message: format!("Invalid parameters: {}", e).into(),
+                        data: None,
+                    })?;
 
                 self.server_inspect(params).await
             }

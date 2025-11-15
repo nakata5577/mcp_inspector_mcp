@@ -1,7 +1,5 @@
 use crate::client::ClientManager;
-use crate::models::{
-    HealthCheckResponse, HealthCheckResult, HealthHistory, HealthStatus, Result,
-};
+use crate::models::{HealthCheckResponse, HealthCheckResult, HealthHistory, HealthStatus, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -71,8 +69,7 @@ impl HealthChecker {
         };
 
         // Update history
-        self.update_history(server_name, check_result.clone())
-            .await;
+        self.update_history(server_name, check_result.clone()).await;
 
         // Calculate error statistics from history
         let (error_count, error_rate) = self.calculate_error_rate(server_name).await;

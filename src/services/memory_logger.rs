@@ -113,9 +113,7 @@ impl LoggerBackend for MemoryLogger {
     fn add_log_message(&self, entry: LogEntry) -> Result<()> {
         let mut messages = self.log_messages.write().unwrap();
 
-        let server_messages = messages
-            .entry(entry.server_name.clone())
-            .or_default();
+        let server_messages = messages.entry(entry.server_name.clone()).or_default();
 
         server_messages.push(entry);
 
