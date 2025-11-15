@@ -1,4 +1,5 @@
 pub mod manager;
+pub mod monitoring_transport;
 pub mod stdio_client;
 
 use crate::models::{PromptInfo, PromptMessage, ResourceContent, ResourceInfo, Result, ToolInfo};
@@ -38,4 +39,5 @@ pub trait McpClient: Send + Sync {
 }
 
 pub use manager::ClientManager;
+pub use monitoring_transport::MonitoringTransport;
 pub use stdio_client::StdioClient;

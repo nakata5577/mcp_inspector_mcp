@@ -1,5 +1,6 @@
 use crate::client::{McpClient, StdioClient};
 use crate::models::{InspectorError, Result, ServerConfig, TransportType};
+use crate::services::SamplingLogger;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -8,11 +9,12 @@ use tokio::sync::RwLock;
 pub struct ClientManager {
     configs: HashMap<String, ServerConfig>,
     clients: Arc<RwLock<HashMap<String, Box<dyn McpClient>>>>,
+    sampling_logger: Arc<SamplingLogger>,
 }
 
 impl ClientManager {
     /// Create a new ClientManager with the given server configurations
-    pub fn new(configs: Vec<ServerConfig>) -> Self {
+    pub fn new(configs: Vec<ServerConfig>, sampling_logger: Arc<SamplingLogger>) -> Self {
         let configs_map = configs
             .into_iter()
             .map(|config| (config.name.clone(), config))
@@ -21,6 +23,7 @@ impl ClientManager {
         Self {
             configs: configs_map,
             clients: Arc::new(RwLock::new(HashMap::new())),
+            sampling_logger,
         }
     }
 
@@ -44,7 +47,10 @@ impl ClientManager {
 
         // Create new client based on transport type
         let client: Box<dyn McpClient> = match config.transport {
-            TransportType::Stdio => Box::new(StdioClient::new(config)),
+            TransportType::Stdio => Box::new(StdioClient::new(
+                config,
+                Arc::clone(&self.sampling_logger),
+            )),
         };
 
         Ok(client)

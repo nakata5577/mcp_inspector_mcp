@@ -27,7 +27,7 @@
 # [[servers]]
 # name = "my-rust-server"
 # transport = "stdio"
-# command = "cargo"
+# command = "tests/mock_sampling_server/target/release/mock_sampling_server.exe"
 # args = ["run", "--release"]
 # [servers.env]
 # MY_ENV_VAR = "value"
@@ -37,8 +37,18 @@
 [[servers]]
 name = "fundamental_analysis"
 transport = "stdio"
-command = "../fundamental_analysis/target/release/fundamental_analysis.exe"
+command = "C:/Users/takah/work/my_mcp_server/fundamental_analysis/target/release/fundamental_analysis.exe"
 args = []
 
 [servers.env]
 # Add any required environment variables here
+
+# Mock Sampling Server for testing MonitoringTransport
+[[servers]]
+name = "mock_sampling"
+transport = "stdio"
+command = "C:/Users/takah/work/my_mcp_server/mcp_inspector_mcp/tests/mock_sampling_server/target/release/mock_sampling_server.exe"
+args = []
+
+[servers.env]
+# No environment variables required for mock server

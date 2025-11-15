@@ -13,15 +13,19 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct InspectorService {
     client_manager: Arc<ClientManager>,
-    sampling_logger: SamplingLogger,
+    sampling_logger: Arc<SamplingLogger>,
 }
 
 impl InspectorService {
     /// Create a new InspectorService with the given server configurations
     pub fn new(configs: Vec<ServerConfig>) -> Self {
+        let sampling_logger = Arc::new(SamplingLogger::new(1000));
         Self {
-            client_manager: Arc::new(ClientManager::new(configs)),
-            sampling_logger: SamplingLogger::new(1000),
+            client_manager: Arc::new(ClientManager::new(
+                configs,
+                Arc::clone(&sampling_logger),
+            )),
+            sampling_logger,
         }
     }
 

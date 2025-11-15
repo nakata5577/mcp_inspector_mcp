@@ -1,8 +1,9 @@
-use crate::client::McpClient;
+use crate::client::{McpClient, MonitoringTransport};
 use crate::models::{
     InspectorError, PromptArgument, PromptInfo, PromptMessage, ResourceContent, ResourceInfo,
     Result, ServerConfig, ToolInfo,
 };
+use crate::services::SamplingLogger;
 use anyhow::Context;
 use async_trait::async_trait;
 use rmcp::model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam};
@@ -17,14 +18,16 @@ use tokio::sync::Mutex;
 pub struct StdioClient {
     config: ServerConfig,
     service: Arc<Mutex<Option<RunningService<RoleClient, ()>>>>,
+    sampling_logger: Arc<SamplingLogger>,
 }
 
 impl StdioClient {
     /// Create a new StdioClient from server configuration
-    pub fn new(config: ServerConfig) -> Self {
+    pub fn new(config: ServerConfig, sampling_logger: Arc<SamplingLogger>) -> Self {
         Self {
             config,
             service: Arc::new(Mutex::new(None)),
+            sampling_logger,
         }
     }
 
@@ -39,7 +42,7 @@ impl StdioClient {
         let config = self.config.clone();
 
         // Build command with arguments and environment variables
-        let transport = TokioChildProcess::new(Command::new(&config.params.command).configure(
+        let base_transport = TokioChildProcess::new(Command::new(&config.params.command).configure(
             |cmd| {
                 cmd.args(&config.params.args);
                 for (key, value) in &config.params.env {
@@ -52,9 +55,16 @@ impl StdioClient {
             source: e.into(),
         })?;
 
+        // Wrap with MonitoringTransport to enable sampling monitoring
+        let monitoring_transport = MonitoringTransport::new(
+            base_transport,
+            Arc::clone(&self.sampling_logger),
+            config.name.clone(),
+        );
+
         // Create service and establish connection
         let service = ()
-            .serve(transport)
+            .serve(monitoring_transport)
             .await
             .map_err(|e| InspectorError::ConnectionFailed {
                 server: config.name.clone(),
