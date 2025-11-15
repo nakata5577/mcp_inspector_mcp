@@ -1,5 +1,6 @@
 # Rust
 /target
+**/target/
 Cargo.lock
 
 # IDE
@@ -15,5 +16,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Data
+/data/
+
+# Examples (optional, uncomment if needed)
+# /examples/
 
 .serena/

@@ -44,5 +44,6 @@
   "enabledMcpjsonServers": [
     "docs-rs",
     "serena"
-  ]
+  ],
+  "enableAllProjectMcpServers": true
 }

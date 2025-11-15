@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 6: 高度な検査機能
+
+#### Phase 6.3: Logging検査機能 📋
+- **新規ツール**: `logging_messages` - ログメッセージ検査
+  - `notifications/message`通知の自動検出
+  - ログメッセージの収集と保存
+  - レベルフィルタリング（Debug/Info/Notice/Warning/Error/Critical/Alert/Emergency）
+  - 時間範囲フィルタリング（RFC3339形式）
+  - 件数制限
+  - Memory/Persistent両バックエンド対応
+
+**実装詳細:**
+- `src/models/logging_inspection.rs`: データモデル（112行）
+  - LoggingMessagesRequest/Response
+  - LogEntry（timestamp, level, logger, message）
+  - LogLevel（PartialOrd実装）
+- `src/services/logging_inspector.rs`: ログ検査サービス（288行）
+  - add_log_entry() - ログ追加
+  - get_logging_messages() - フィルタ付き取得
+- `src/services/logger_backend.rs`: トレイト拡張（+48行）
+  - add_log_message()/get_log_messages()メソッド追加
+- `src/services/persistent_logger.rs`: sled永続化実装（+110行）
+- `src/services/memory_logger.rs`: メモリ実装（+77行）
+- `src/client/monitoring_transport.rs`: 通知検出（+59行）
+  - is_logging_notification() - 通知判定
+  - extract_and_log_message() - ログ抽出・記録
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"のエラーレベル以上のログを最新50件取得してください
+```
+
+**テスト**: 5個のユニットテスト（レベルフィルタ、時間フィルタ、件数制限検証）
+
+#### Phase 6.2: ヘルスチェック機能 💚
+- **新規ツール**: `health_check` - ヘルスチェック実行
+  - Pingによる疎通確認
+  - レスポンスタイム測定（ミリ秒精度）
+  - エラー率算出（最近100件の履歴）
+  - 3段階ステータス判定（Healthy/Degraded/Unhealthy）
+  - 循環バッファによる履歴管理
+
+**ヘルスステータス判定基準:**
+- **Healthy**: レスポンスタイム < 500ms かつ エラー率 < 5%
+- **Degraded**: レスポンスタイム < 2000ms かつ エラー率 < 20%
+- **Unhealthy**: レスポンスタイム >= 2000ms または エラー率 >= 20%
+
+**実装詳細:**
+- `src/models/health.rs`: データモデル（116行）
+  - HealthCheckRequest/Response
+  - HealthStatus（Healthy/Degraded/Unhealthy）
+  - HealthHistory（循環バッファ）
+- `src/services/health_checker.rs`: ヘルスチェックサービス（247行）
+  - check_health() - ping送信、測定、判定
+  - RwLockによるスレッドセーフな履歴管理
+- `src/client/stdio_client.rs`: ping()メソッド追加（+32行）
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"のヘルスチェックを実行してください
+```
+
+**テスト**: 6個のユニットテスト（ステータス判定、循環バッファ、エラー統計検証）
+
+#### Phase 6.1: サーバー設定検査機能 🔧
+- **新規ツール**: `server_inspect` - サーバー設定検査
+  - サーバー実装情報（名前、バージョン、WebサイトURL）
+  - サーバー機能（tools, resources, prompts, logging, experimental）
+  - 各機能の詳細フラグ（list_changed, subscribe等）
+  - プロトコルバージョン
+  - 接続状態（Connected/Disconnected/Error）
+
+**実装詳細:**
+- `src/models/server_info.rs`: データモデル（101行）
+  - ServerInspectRequest/Response
+  - ServerImplementation, ServerCapabilitiesInfo
+  - ConnectionStatus
+- `src/services/server_info_service.rs`: サーバー情報取得（145行）
+  - get_server_info() - InitializeResultからの情報抽出
+- `src/client/stdio_client.rs`: get_init_result()メソッド追加（+33行）
+- `src/client/manager.rs`: get_stdio_client()メソッド追加（+59行）
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"の設定情報を取得してください
+```
+
+**総実装規模（Phase 6全体）:**
+- **新規コード**: 約1,600行
+- **新規ファイル**: 7ファイル
+- **修正ファイル**: 13ファイル
+- **新規MCPツール**: 3個
+- **新規テスト**: 16個
+
 ### Added - Phase 5後半: パフォーマンス最適化
 
 #### 接続プーリング
