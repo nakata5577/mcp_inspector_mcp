@@ -1,5 +1,6 @@
-use crate::models::SamplingLogEntry;
+use crate::models::{LogEntry, LogLevel, SamplingLogEntry};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use std::fmt::Debug;
 
 /// Backend trait for logging sampling requests and responses
@@ -46,6 +47,45 @@ pub trait LoggerBackend: Send + Sync + Debug {
     /// # Arguments
     /// * `server_name` - Name of the server to clear logs for
     fn clear_logs(&self, server_name: &str) -> Result<()> {
+        // Default implementation (no-op for backward compatibility)
+        let _ = server_name;
+        Ok(())
+    }
+
+    // === Logging Message Methods ===
+
+    /// Adds a new logging message entry
+    ///
+    /// # Arguments
+    /// * `entry` - The log message entry to add
+    ///
+    /// # Errors
+    /// Returns an error if the log message cannot be added
+    fn add_log_message(&self, entry: LogEntry) -> Result<()>;
+
+    /// Retrieves logging messages filtered by server, level, and time
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the server to filter logs by
+    /// * `level` - Minimum log level filter (None = all levels)
+    /// * `limit` - Maximum number of messages to return
+    /// * `since` - Return only messages after this timestamp (None = all time)
+    ///
+    /// # Returns
+    /// A vector of matching log entries, sorted newest first
+    fn get_log_messages(
+        &self,
+        server_name: &str,
+        level: Option<LogLevel>,
+        limit: usize,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<LogEntry>>;
+
+    /// Clears all logging messages for a specific server
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the server to clear messages for
+    fn clear_log_messages(&self, server_name: &str) -> Result<()> {
         // Default implementation (no-op for backward compatibility)
         let _ = server_name;
         Ok(())

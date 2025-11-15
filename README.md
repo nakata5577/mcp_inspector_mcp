@@ -45,6 +45,26 @@ AIエージェント (Claude Desktop)
 - ✅ キャッシング戦略 - TTLベースのレスポンスキャッシュ
 - ✅ 並列処理の改善 - 複数サーバーの並列処理
 
+### Phase 6.1 - 実装済み 🔧
+- ✅ `server_inspect` - サーバー設定検査機能
+- ✅ サーバー情報取得 - 名前、バージョン、プロトコルバージョン
+- ✅ サーバー機能確認 - tools, resources, prompts, logging等の対応状況
+- ✅ 接続状態確認 - Connected/Disconnected/Error
+
+### Phase 6.2 - 実装済み 💚
+- ✅ `health_check` - ヘルスチェック機能
+- ✅ Ping疎通確認 - サーバーへのpingによる応答確認
+- ✅ レスポンスタイム測定 - ミリ秒単位の正確な測定
+- ✅ エラー率算出 - 最近100件の履歴から自動計算
+- ✅ ステータス判定 - Healthy/Degraded/Unhealthy の3段階判定
+
+### Phase 6.3 - 実装済み 📋
+- ✅ `logging_messages` - ログメッセージ検査機能
+- ✅ ログ通知受信 - notifications/message通知の自動検出
+- ✅ ログレベルフィルタ - Debug/Info/Warning/Error等でフィルタリング
+- ✅ 時間範囲フィルタ - 指定時刻以降のログを取得
+- ✅ 永続化対応 - Memory/Persistentバックエンド両対応
+
 ## セットアップ
 
 ### 1. ビルド
@@ -414,6 +434,154 @@ Claude Desktopから以下のように使用します：
   "total_count": 1
 }
 ```
+
+### Phase 6.1: サーバー設定検査機能 🔧
+
+#### server_inspect
+
+対象MCPサーバーの設定情報と機能を詳細に取得します。
+
+**引数:**
+- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+
+**戻り値:**
+```json
+{
+  "server_name": "fundamental_analysis",
+  "implementation": {
+    "name": "fundamental-analysis-server",
+    "title": "Financial Analysis Server",
+    "version": "1.0.0",
+    "website_url": "https://example.com"
+  },
+  "capabilities": {
+    "logging": false,
+    "experimental": false,
+    "completions": false,
+    "prompts": {
+      "supported": true,
+      "list_changed": false
+    },
+    "resources": {
+      "supported": true,
+      "subscribe": false,
+      "list_changed": false
+    },
+    "tools": {
+      "supported": true,
+      "list_changed": false
+    }
+  },
+  "connection_status": "connected",
+  "protocol_version": "2024-11-05",
+  "instructions": null
+}
+```
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"の設定情報を取得してください
+```
+
+### Phase 6.2: ヘルスチェック機能 💚
+
+#### health_check
+
+対象MCPサーバーのヘルスチェックを実行し、疎通確認とパフォーマンス測定を行います。
+
+**引数:**
+- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+
+**戻り値:**
+```json
+{
+  "server_name": "fundamental_analysis",
+  "status": "healthy",
+  "response_time_ms": 45,
+  "last_check": "2025-11-15T10:30:00Z",
+  "error_count": 0,
+  "error_rate": 0.0,
+  "details": null
+}
+```
+
+**ヘルスステータス判定基準:**
+- **Healthy**: レスポンスタイム < 500ms かつ エラー率 < 5%
+- **Degraded**: レスポンスタイム < 2000ms かつ エラー率 < 20%
+- **Unhealthy**: レスポンスタイム >= 2000ms または エラー率 >= 20%
+
+**機能詳細:**
+- Pingによる疎通確認
+- ミリ秒単位のレスポンスタイム測定
+- 最近100件の履歴からエラー率を自動計算
+- 3段階のヘルスステータス判定
+- 履歴は循環バッファで自動管理（サーバー再起動で消失）
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"のヘルスチェックを実行してください
+```
+
+### Phase 6.3: Logging検査機能 📋
+
+#### logging_messages
+
+対象MCPサーバーから送信されるログメッセージを取得します。MonitoringTransportが`notifications/message`通知を自動検出し、ログを記録します。
+
+**引数:**
+- `server` (string, required): 対象サーバー名（config/servers.tomlで定義）
+- `level` (string, optional): 最小ログレベル（"debug", "info", "warning", "error"等）
+- `limit` (integer, optional): 取得するログの最大件数（デフォルト: 100）
+- `since` (string, optional): 開始時刻（RFC3339形式、この時刻以降のログを取得）
+
+**戻り値:**
+```json
+{
+  "server_name": "fundamental_analysis",
+  "messages": [
+    {
+      "timestamp": "2025-11-15T10:30:00Z",
+      "server_name": "fundamental_analysis",
+      "level": "info",
+      "logger": "app.service",
+      "message": "Request processed successfully"
+    }
+  ],
+  "total_count": 1
+}
+```
+
+**ログレベル一覧:**
+- `debug` - デバッグメッセージ（最も詳細）
+- `info` - 情報メッセージ
+- `notice` - 通知メッセージ
+- `warning` - 警告メッセージ
+- `error` - エラーメッセージ
+- `critical` - 致命的エラー
+- `alert` - アラート
+- `emergency` - 緊急事態（最も重要）
+
+**フィルタリング機能:**
+- **レベルフィルタ**: 指定したレベル以上のログのみ取得
+- **時間範囲フィルタ**: `since`パラメータで指定時刻以降のログを取得
+- **件数制限**: `limit`パラメータで返却数を制御
+
+**ログ保存:**
+- **Memory Backend**: メモリ内に保存（サーバー再起動で消失）
+- **Persistent Backend**: sledデータベースに保存（永続化）
+- 各サーバーごとに最大10,000件まで保存（設定可能）
+- 古いログは自動削除（FIFO方式）
+
+**使用例:**
+```
+対象サーバー"fundamental_analysis"のエラーレベル以上のログを最新50件取得してください
+```
+
+**技術詳細:**
+- `notifications/message`プロトコルに準拠
+- MonitoringTransportで自動検出・記録
+- 非同期処理により高速動作
+- スレッドセーフな実装
 
 ## トラブルシューティング
 

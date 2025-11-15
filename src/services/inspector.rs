@@ -1,11 +1,15 @@
 use crate::client::ClientManager;
 use crate::models::{
-    InspectorConfig, PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
+    HealthCheckResponse, InspectorConfig, LoggingMessagesRequest, LoggingMessagesResponse,
+    PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
     ResourceReadRequest, ResourceReadResponse, ResourcesListRequest, ResourcesListResponse, Result,
-    SamplingLogsRequest, SamplingLogsResponse, ToolCallRequest, ToolCallResponse,
-    ToolsListResponse,
+    SamplingLogsRequest, SamplingLogsResponse, ServerInspectResponse, ToolCallRequest,
+    ToolCallResponse, ToolsListResponse,
 };
-use crate::services::{create_logger, ResponseCache, SamplingLogger};
+use crate::services::{
+    create_logger, HealthChecker, LoggingInspector, ResponseCache, SamplingLogger,
+    ServerInfoService,
+};
 use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +21,9 @@ use tokio::task::JoinSet;
 pub struct InspectorService {
     client_manager: Arc<ClientManager>,
     sampling_logger: Arc<SamplingLogger>,
+    logging_inspector: Arc<LoggingInspector>,
     response_cache: Arc<ResponseCache>,
+    health_checker: Arc<HealthChecker>,
 }
 
 impl InspectorService {
@@ -35,18 +41,26 @@ impl InspectorService {
         let logger_backend =
             create_logger(&config.logging).context("Failed to create logger backend")?;
 
-        let sampling_logger = Arc::new(SamplingLogger::new(logger_backend));
+        let sampling_logger = Arc::new(SamplingLogger::new(Arc::clone(&logger_backend)));
+        let logging_inspector = Arc::new(LoggingInspector::new(logger_backend));
 
         // Create response cache with default 5-minute TTL
         let response_cache = Arc::new(ResponseCache::new(Duration::from_secs(300)));
 
+        let client_manager = Arc::new(ClientManager::new(
+            config.servers,
+            Arc::clone(&sampling_logger),
+        ));
+
+        // Create health checker
+        let health_checker = Arc::new(HealthChecker::new(Arc::clone(&client_manager)));
+
         Ok(Self {
-            client_manager: Arc::new(ClientManager::new(
-                config.servers,
-                Arc::clone(&sampling_logger),
-            )),
+            client_manager,
             sampling_logger,
+            logging_inspector,
             response_cache,
+            health_checker,
         })
     }
 
@@ -471,5 +485,140 @@ impl InspectorService {
         }
 
         Ok(results)
+    }
+
+    // ========== Server Inspection Methods ==========
+
+    /// Inspect server configuration and capabilities
+    ///
+    /// This method retrieves comprehensive information about a target MCP server,
+    /// including its implementation details, capabilities, and connection status.
+    ///
+    /// # Arguments
+    ///
+    /// * `server_name` - Name of the target server to inspect
+    ///
+    /// # Returns
+    ///
+    /// A `ServerInspectResponse` containing detailed server information
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The server is not found in the configuration
+    /// - Failed to connect to the server
+    /// - Failed to retrieve server information
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let info = service.server_inspect("my-server").await?;
+    /// println!("Server: {} v{}", info.implementation.name, info.implementation.version);
+    /// println!("Tools supported: {}", info.capabilities.tools.supported);
+    /// ```
+    pub async fn server_inspect(&self, server_name: &str) -> Result<ServerInspectResponse> {
+        // Get StdioClient for the target server
+        let client = self
+            .client_manager
+            .get_stdio_client(server_name)
+            .await
+            .context("Failed to get stdio client")?;
+
+        // Retrieve server information using ServerInfoService
+        Ok(ServerInfoService::get_server_info(client, server_name.to_string())
+            .await
+            .context("Failed to get server information")?)
+    }
+
+    /// Perform a health check on the specified server
+    ///
+    /// This method sends a ping request to the server, measures the response time,
+    /// and determines the server's health status based on response time and error rate.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to check
+    ///
+    /// # Returns
+    /// A `HealthCheckResponse` containing:
+    /// - Health status (Healthy, Degraded, or Unhealthy)
+    /// - Response time in milliseconds
+    /// - Error count and error rate from recent checks
+    /// - Timestamp of the check
+    /// - Error details if the check failed
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The server is not found in the configuration
+    /// - Failed to create or get client connection
+    ///
+    /// # Example
+    /// ```
+    /// let health = service.health_check("my-server").await?;
+    /// println!("Server status: {:?}", health.status);
+    /// println!("Response time: {}ms", health.response_time_ms);
+    /// ```
+    pub async fn health_check(&self, server_name: &str) -> Result<HealthCheckResponse> {
+        Ok(self
+            .health_checker
+            .check_health(server_name)
+            .await
+            .context("Failed to perform health check")?)
+    }
+
+    // ========== Logging Inspection Methods ==========
+
+    /// Retrieve logging messages from a server with filtering
+    ///
+    /// This method retrieves log messages that were sent by the target MCP server
+    /// via the `notifications/message` protocol. Messages can be filtered by log level,
+    /// time range, and limited by count.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Request parameters including:
+    ///   - `server`: Name of the target server
+    ///   - `level`: Optional minimum log level filter (e.g., "info", "warning", "error")
+    ///   - `limit`: Maximum number of messages to return
+    ///   - `since`: Optional timestamp to filter messages after
+    ///
+    /// # Returns
+    ///
+    /// A `LoggingMessagesResponse` containing:
+    /// - `server_name`: Name of the server these messages came from
+    /// - `messages`: Vector of log entries, sorted newest first
+    /// - `total_count`: Total number of messages returned
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The log level string is invalid (not a recognized level)
+    /// - The timestamp string is malformed (not RFC3339 format)
+    /// - Failed to retrieve messages from the backend
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crate::models::LoggingMessagesRequest;
+    ///
+    /// let request = LoggingMessagesRequest {
+    ///     server: "my-server".to_string(),
+    ///     level: Some("warning".to_string()),
+    ///     limit: 100,
+    ///     since: Some("2025-01-15T12:00:00Z".to_string()),
+    /// };
+    ///
+    /// let response = service.logging_messages(request).await?;
+    /// for msg in &response.messages {
+    ///     println!("[{}] {}: {}", msg.level, msg.logger.as_deref().unwrap_or(""), msg.message);
+    /// }
+    /// ```
+    pub async fn logging_messages(
+        &self,
+        request: LoggingMessagesRequest,
+    ) -> Result<LoggingMessagesResponse> {
+        Ok(self
+            .logging_inspector
+            .get_logging_messages(request)
+            .context("Failed to retrieve logging messages")?)
     }
 }

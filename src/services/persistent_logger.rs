@@ -1,6 +1,7 @@
-use crate::models::{SamplingLogEntry, SamplingStatus};
+use crate::models::{LogEntry, LogLevel, SamplingLogEntry, SamplingStatus};
 use crate::services::LoggerBackend;
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tracing::{error, warn};
 
@@ -113,6 +114,59 @@ impl PersistentLogger {
 
         Ok(())
     }
+
+    /// Generates a storage key for a log message entry
+    ///
+    /// Format: logging:{server_name}:{timestamp}
+    fn make_log_message_key(entry: &LogEntry) -> String {
+        format!("logging:{}:{}", entry.server_name, entry.timestamp)
+    }
+
+    /// Performs log message rotation for a specific server
+    ///
+    /// Removes oldest log messages if count exceeds max_logs.
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the server to rotate messages for
+    fn rotate_log_messages(&self, server_name: &str) -> Result<()> {
+        let prefix = format!("logging:{}:", server_name);
+
+        // Count current messages
+        let count = self.db.scan_prefix(prefix.as_bytes()).count();
+
+        if count <= self.max_logs {
+            return Ok(());
+        }
+
+        // Collect all entries with timestamps
+        let mut entries: Vec<(Vec<u8>, String)> = Vec::new();
+
+        for item in self.db.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item.context("Failed to read log message entry")?;
+
+            let entry: LogEntry = serde_json::from_slice(&value)
+                .context("Failed to deserialize log message during rotation")?;
+
+            entries.push((key.to_vec(), entry.timestamp.clone()));
+        }
+
+        // Sort by timestamp (oldest first)
+        entries.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Delete oldest entries
+        let to_delete = count - self.max_logs;
+        for (key, _) in entries.iter().take(to_delete) {
+            self.db
+                .remove(key)
+                .context("Failed to remove old log message")?;
+        }
+
+        self.db
+            .flush()
+            .context("Failed to flush database after message rotation")?;
+
+        Ok(())
+    }
 }
 
 impl LoggerBackend for PersistentLogger {
@@ -213,6 +267,112 @@ impl LoggerBackend for PersistentLogger {
         self.db
             .flush()
             .context("Failed to flush database after clearing logs")?;
+
+        Ok(())
+    }
+
+    fn add_log_message(&self, entry: LogEntry) -> Result<()> {
+        // Serialize entry using JSON
+        let value = serde_json::to_vec(&entry).context("Failed to serialize log message")?;
+
+        // Generate key
+        let key = Self::make_log_message_key(&entry);
+
+        // Store in database
+        if let Err(e) = self.db.insert(key.as_bytes(), value) {
+            error!("Failed to insert log message into database: {:?}", e);
+            return Err(e.into());
+        }
+
+        // Perform rotation (non-fatal on failure)
+        if let Err(e) = self.rotate_log_messages(&entry.server_name) {
+            warn!(
+                "Failed to rotate log messages for server {}: {:?}",
+                entry.server_name, e
+            );
+        }
+
+        // Flush to disk (optional, for durability)
+        if let Err(e) = self.db.flush() {
+            warn!("Failed to flush database: {:?}", e);
+        }
+
+        Ok(())
+    }
+
+    fn get_log_messages(
+        &self,
+        server_name: &str,
+        level: Option<LogLevel>,
+        limit: usize,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<LogEntry>> {
+        let prefix = format!("logging:{}:", server_name);
+
+        // Scan entries with the server prefix
+        let mut entries: Vec<LogEntry> = Vec::new();
+
+        for item in self.db.scan_prefix(prefix.as_bytes()) {
+            let (_key, value) = item.context("Failed to read log message entry")?;
+
+            // Deserialize entry
+            let entry: LogEntry = serde_json::from_slice(&value)
+                .context("Failed to deserialize log message")?;
+
+            // Apply level filter (minimum level)
+            if let Some(min_level) = level {
+                if entry.level < min_level {
+                    continue;
+                }
+            }
+
+            // Apply time filter
+            if let Some(since_time) = since {
+                if let Ok(entry_time) = DateTime::parse_from_rfc3339(&entry.timestamp) {
+                    if entry_time.with_timezone(&Utc) < since_time {
+                        continue;
+                    }
+                } else {
+                    // Skip entries with invalid timestamps
+                    warn!(
+                        "Invalid timestamp in log entry: {}",
+                        entry.timestamp
+                    );
+                    continue;
+                }
+            }
+
+            entries.push(entry);
+        }
+
+        // Sort by timestamp (newest first)
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        // Apply limit
+        Ok(entries.into_iter().take(limit).collect())
+    }
+
+    fn clear_log_messages(&self, server_name: &str) -> Result<()> {
+        let prefix = format!("logging:{}:", server_name);
+
+        // Collect keys to delete
+        let keys_to_delete: Vec<Vec<u8>> = self
+            .db
+            .scan_prefix(prefix.as_bytes())
+            .filter_map(|item| item.ok().map(|(k, _)| k.to_vec()))
+            .collect();
+
+        // Delete all matching keys
+        for key in keys_to_delete {
+            if let Err(e) = self.db.remove(key) {
+                error!("Failed to remove log message entry: {:?}", e);
+                return Err(e.into());
+            }
+        }
+
+        self.db
+            .flush()
+            .context("Failed to flush database after clearing log messages")?;
 
         Ok(())
     }

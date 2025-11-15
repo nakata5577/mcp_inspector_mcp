@@ -31,6 +31,37 @@ impl StdioClient {
         }
     }
 
+    /// Get the InitializeResult from the server
+    ///
+    /// This method returns the initialization result containing server
+    /// capabilities, implementation info, and protocol version.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The client is not connected
+    /// - Failed to retrieve initialization result
+    pub async fn get_init_result(&self) -> Result<rmcp::model::InitializeResult> {
+        self.connect().await?;
+        let guard = self.service.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        // Get InitializeResult from peer_info
+        let init_result = service
+            .peer_info()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Peer info not available"),
+            })?;
+
+        Ok(init_result.clone())
+    }
+
     /// Initialize connection to the MCP server
     async fn connect(&self) -> Result<()> {
         let mut guard = self.service.lock().await;
@@ -78,6 +109,41 @@ impl StdioClient {
     async fn get_service(&self) -> Result<Arc<Mutex<Option<RunningService<RoleClient, ()>>>>> {
         self.connect().await?;
         Ok(Arc::clone(&self.service))
+    }
+
+    /// Ping the server to check connectivity
+    ///
+    /// This method sends a ping request to the server and waits for a response.
+    /// It can be used to verify that the server is responsive and the connection is healthy.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The client is not connected
+    /// - The ping request fails
+    pub async fn ping(&self) -> Result<()> {
+        self.connect().await?;
+        let guard = self.service.lock().await;
+
+        let service = guard
+            .as_ref()
+            .ok_or_else(|| InspectorError::ConnectionFailed {
+                server: self.config.name.clone(),
+                source: anyhow::anyhow!("Service not initialized"),
+            })?;
+
+        // Send ping request
+        service
+            .send_request(rmcp::model::ClientRequest::PingRequest(
+                rmcp::model::PingRequest {
+                    method: rmcp::model::PingRequestMethod,
+                    extensions: Default::default(),
+                },
+            ))
+            .await
+            .map_err(|e| InspectorError::Internal(e.into()))
+            .context("Ping request failed")?;
+
+        Ok(())
     }
 }
 

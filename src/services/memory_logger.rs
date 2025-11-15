@@ -1,16 +1,29 @@
-use crate::models::{SamplingLogEntry, SamplingStatus};
+use crate::models::{LogEntry, LogLevel, SamplingLogEntry, SamplingStatus};
 use crate::services::LoggerBackend;
 use anyhow::Result;
-use std::sync::{Arc, Mutex};
+use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// Memory-based logger implementation
 ///
 /// Stores logs in memory with a fixed maximum capacity.
 /// Logs are lost on server restart.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MemoryLogger {
-    logs: Arc<Mutex<Vec<SamplingLogEntry>>>,
+    logs: Arc<RwLock<Vec<SamplingLogEntry>>>,
+    log_messages: Arc<RwLock<HashMap<String, Vec<LogEntry>>>>,
     max_logs: usize,
+}
+
+impl Clone for MemoryLogger {
+    fn clone(&self) -> Self {
+        Self {
+            logs: Arc::clone(&self.logs),
+            log_messages: Arc::clone(&self.log_messages),
+            max_logs: self.max_logs,
+        }
+    }
 }
 
 impl MemoryLogger {
@@ -29,7 +42,8 @@ impl MemoryLogger {
     /// ```
     pub fn new(max_logs: usize) -> Self {
         Self {
-            logs: Arc::new(Mutex::new(Vec::new())),
+            logs: Arc::new(RwLock::new(Vec::new())),
+            log_messages: Arc::new(RwLock::new(HashMap::new())),
             max_logs,
         }
     }
@@ -37,7 +51,7 @@ impl MemoryLogger {
 
 impl LoggerBackend for MemoryLogger {
     fn add_log(&self, entry: SamplingLogEntry) -> Result<()> {
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.write().unwrap();
         logs.push(entry);
 
         // FIFO rotation
@@ -54,7 +68,7 @@ impl LoggerBackend for MemoryLogger {
         limit: usize,
         status: &str,
     ) -> Result<Vec<SamplingLogEntry>> {
-        let logs = self.logs.lock().unwrap();
+        let logs = self.logs.read().unwrap();
 
         let mut filtered: Vec<SamplingLogEntry> = logs
             .iter()
@@ -76,7 +90,7 @@ impl LoggerBackend for MemoryLogger {
     }
 
     fn count_logs(&self, server_name: &str) -> Result<usize> {
-        let logs = self.logs.lock().unwrap();
+        let logs = self.logs.read().unwrap();
         let count = logs
             .iter()
             .filter(|entry| {
@@ -88,11 +102,78 @@ impl LoggerBackend for MemoryLogger {
     }
 
     fn clear_logs(&self, server_name: &str) -> Result<()> {
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.write().unwrap();
         logs.retain(|entry| {
             let entry_server = entry.id.split(':').next().unwrap_or("");
             entry_server != server_name
         });
+        Ok(())
+    }
+
+    fn add_log_message(&self, entry: LogEntry) -> Result<()> {
+        let mut messages = self.log_messages.write().unwrap();
+
+        let server_messages = messages
+            .entry(entry.server_name.clone())
+            .or_default();
+
+        server_messages.push(entry);
+
+        // FIFO rotation per server
+        while server_messages.len() > self.max_logs {
+            server_messages.remove(0);
+        }
+
+        Ok(())
+    }
+
+    fn get_log_messages(
+        &self,
+        server_name: &str,
+        level: Option<LogLevel>,
+        limit: usize,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<LogEntry>> {
+        let messages = self.log_messages.read().unwrap();
+
+        let server_messages = messages.get(server_name).cloned().unwrap_or_default();
+
+        let mut filtered: Vec<LogEntry> = server_messages
+            .into_iter()
+            .filter(|entry| {
+                // Apply level filter (minimum level)
+                if let Some(min_level) = level {
+                    if entry.level < min_level {
+                        return false;
+                    }
+                }
+
+                // Apply time filter
+                if let Some(since_time) = since {
+                    if let Ok(entry_time) = DateTime::parse_from_rfc3339(&entry.timestamp) {
+                        if entry_time.with_timezone(&Utc) < since_time {
+                            return false;
+                        }
+                    } else {
+                        // Skip entries with invalid timestamps
+                        return false;
+                    }
+                }
+
+                true
+            })
+            .collect();
+
+        // Sort by timestamp (newest first)
+        filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        // Apply limit
+        Ok(filtered.into_iter().take(limit).collect())
+    }
+
+    fn clear_log_messages(&self, server_name: &str) -> Result<()> {
+        let mut messages = self.log_messages.write().unwrap();
+        messages.remove(server_name);
         Ok(())
     }
 }

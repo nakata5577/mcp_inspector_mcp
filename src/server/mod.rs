@@ -57,8 +57,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -74,7 +73,11 @@ impl InspectorServer {
         let call_request = ToolCallRequest {
             server: params.0.server.clone(),
             tool_name: params.0.tool_name.clone(),
-            arguments: params.0.arguments.clone().unwrap_or_else(|| serde_json::json!({})),
+            arguments: params
+                .0
+                .arguments
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({})),
         };
 
         let result = self
@@ -94,8 +97,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -129,8 +131,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -165,8 +166,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -200,8 +200,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -237,8 +236,7 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 
@@ -274,8 +272,104 @@ impl InspectorServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&json_result)
-                .unwrap_or_else(|_| json_result.to_string()),
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
+        )]))
+    }
+
+    /// Get logging messages from a specific MCP server
+    #[tool(
+        name = "logging_messages",
+        description = "指定されたMCPサーバーから送信されるログメッセージを取得します。ログレベル、時刻でフィルタリング可能です"
+    )]
+    async fn logging_messages(
+        &self,
+        params: Parameters<LoggingMessagesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let request = crate::models::LoggingMessagesRequest {
+            server: params.0.server.clone(),
+            level: params.0.level.clone(),
+            limit: params.0.limit.unwrap_or(100),
+            since: params.0.since.clone(),
+        };
+
+        let result = self
+            .inspector
+            .logging_messages(request)
+            .await
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to get logging messages: {}", e).into(),
+                data: None,
+            })?;
+
+        let json_result = serde_json::to_value(&result).map_err(|e| McpError {
+            code: ErrorCode(-32603),
+            message: format!("JSON serialization error: {}", e).into(),
+            data: None,
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
+        )]))
+    }
+
+    /// Perform a health check on a specific MCP server
+    #[tool(
+        name = "health_check",
+        description = "指定されたMCPサーバーのヘルスチェックを実行します。pingを送信してレスポンスタイムとエラー率を測定します"
+    )]
+    async fn health_check(
+        &self,
+        params: Parameters<HealthCheckParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self
+            .inspector
+            .health_check(&params.0.server)
+            .await
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to perform health check: {}", e).into(),
+                data: None,
+            })?;
+
+        let json_result = serde_json::to_value(&result).map_err(|e| McpError {
+            code: ErrorCode(-32603),
+            message: format!("JSON serialization error: {}", e).into(),
+            data: None,
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
+        )]))
+    }
+
+    /// Inspect a specific MCP server
+    #[tool(
+        name = "server_inspect",
+        description = "指定されたMCPサーバーの設定情報と機能を取得します"
+    )]
+    async fn server_inspect(
+        &self,
+        params: Parameters<ServerInspectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self
+            .inspector
+            .server_inspect(&params.0.server)
+            .await
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to inspect server: {}", e).into(),
+                data: None,
+            })?;
+
+        let json_result = serde_json::to_value(&result).map_err(|e| McpError {
+            code: ErrorCode(-32603),
+            message: format!("JSON serialization error: {}", e).into(),
+            data: None,
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
 }
@@ -323,7 +417,8 @@ impl ServerHandler for InspectorServer {
         // Find and call the appropriate tool based on the name
         match request.name.as_ref() {
             "tools_list" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
@@ -337,7 +432,8 @@ impl ServerHandler for InspectorServer {
                 self.tools_list(params).await
             }
             "tools_call" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
@@ -351,7 +447,8 @@ impl ServerHandler for InspectorServer {
                 self.tools_call(params).await
             }
             "resources_list" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
@@ -365,21 +462,23 @@ impl ServerHandler for InspectorServer {
                 self.resources_list(params).await
             }
             "resources_read" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
                 let params: Parameters<ResourceReadParams> = serde_json::from_value(params_value)
                     .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
+                    code: ErrorCode(-32602),
+                    message: format!("Invalid parameters: {}", e).into(),
+                    data: None,
+                })?;
 
                 self.resources_read(params).await
             }
             "prompts_list" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
@@ -393,7 +492,8 @@ impl ServerHandler for InspectorServer {
                 self.prompts_list(params).await
             }
             "prompts_get" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
@@ -407,18 +507,34 @@ impl ServerHandler for InspectorServer {
                 self.prompts_get(params).await
             }
             "sampling_logs" => {
-                let params_value = request.arguments
+                let params_value = request
+                    .arguments
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::json!({}));
 
                 let params: Parameters<SamplingLogsParams> = serde_json::from_value(params_value)
                     .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
+                    code: ErrorCode(-32602),
+                    message: format!("Invalid parameters: {}", e).into(),
+                    data: None,
+                })?;
 
                 self.sampling_logs(params).await
+            }
+            "server_inspect" => {
+                let params_value = request
+                    .arguments
+                    .map(serde_json::Value::Object)
+                    .unwrap_or(serde_json::json!({}));
+
+                let params: Parameters<ServerInspectParams> = serde_json::from_value(params_value)
+                    .map_err(|e| McpError {
+                    code: ErrorCode(-32602),
+                    message: format!("Invalid parameters: {}", e).into(),
+                    data: None,
+                })?;
+
+                self.server_inspect(params).await
             }
             _ => Err(McpError {
                 code: ErrorCode(-32601),
@@ -494,6 +610,36 @@ struct SamplingLogsParams {
     /// Filter by status: "all", "success", "failed" (default: "all")
     #[serde(default)]
     status: Option<String>,
+}
+
+/// Parameters for logging_messages tool
+#[derive(Deserialize, JsonSchema)]
+struct LoggingMessagesParams {
+    /// Name of the MCP server to get logging messages from
+    server: String,
+    /// Minimum log level filter (e.g., "debug", "info", "warning", "error")
+    #[serde(default)]
+    level: Option<String>,
+    /// Maximum number of messages to return (default: 100)
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Return only messages after this timestamp (RFC3339 format)
+    #[serde(default)]
+    since: Option<String>,
+}
+
+/// Parameters for health_check tool
+#[derive(Deserialize, JsonSchema)]
+struct HealthCheckParams {
+    /// Name of the MCP server to check
+    server: String,
+}
+
+/// Parameters for server_inspect tool
+#[derive(Deserialize, JsonSchema)]
+struct ServerInspectParams {
+    /// Name of the MCP server to inspect
+    server: String,
 }
 
 /// Run the MCP Inspector server
