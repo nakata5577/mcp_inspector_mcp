@@ -5,6 +5,7 @@ mod memory_logger;
 mod persistent_logger;
 mod server_info_service;
 
+pub mod config_manager;
 pub mod health_checker;
 pub mod inspector;
 pub mod response_cache;

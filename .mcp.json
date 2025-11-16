@@ -24,10 +24,10 @@
             "env": {}
         },
         "mcp-inspector": {
-            "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe",
+            "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\mcp_inspector_mcp.exe",
             "args": [
                 "--server",
-                "technical-analysis:stdio:C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\technical_analysis.exe",
+                "mcp-inspector:stdio:C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe",
                 "--log-backend",
                 "memory"
             ]

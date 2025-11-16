@@ -372,6 +372,99 @@ impl InspectorServer {
             serde_json::to_string_pretty(&json_result).unwrap_or_else(|_| json_result.to_string()),
         )]))
     }
+
+    /// Add a new server configuration
+    #[tool(
+        name = "config_add_server",
+        description = "サーバー設定を.inspector/config.jsonに追加します"
+    )]
+    async fn config_add_server(
+        &self,
+        params: Parameters<ConfigAddServerParams>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::models::ServerEntry;
+        use crate::services::config_manager;
+
+        let entry = ServerEntry::new(
+            params.0.name.clone(),
+            params.0.transport.clone(),
+            params.0.command.clone(),
+            params.0.args.clone().unwrap_or_default(),
+            params.0.env.clone().unwrap_or_default(),
+        );
+
+        config_manager::add_server(entry)
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to add server: {}", e).into(),
+                data: None,
+            })?;
+
+        let response = serde_json::json!({
+            "success": true,
+            "message": format!("Server '{}' added successfully", params.0.name)
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&response).unwrap(),
+        )]))
+    }
+
+    /// Remove a server configuration
+    #[tool(
+        name = "config_remove_server",
+        description = "サーバー設定を.inspector/config.jsonから削除します"
+    )]
+    async fn config_remove_server(
+        &self,
+        params: Parameters<ConfigRemoveServerParams>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::services::config_manager;
+
+        config_manager::remove_server(&params.0.name)
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to remove server: {}", e).into(),
+                data: None,
+            })?;
+
+        let response = serde_json::json!({
+            "success": true,
+            "message": format!("Server '{}' removed successfully", params.0.name)
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&response).unwrap(),
+        )]))
+    }
+
+    /// List all registered server configurations
+    #[tool(
+        name = "config_list_servers",
+        description = "登録済みサーバーの一覧を.inspector/config.jsonから取得します"
+    )]
+    async fn config_list_servers(
+        &self,
+        _params: Parameters<ConfigListServersParams>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::services::config_manager;
+
+        let servers = config_manager::list_servers()
+            .map_err(|e| McpError {
+                code: ErrorCode(-32603),
+                message: format!("Failed to list servers: {}", e).into(),
+                data: None,
+            })?;
+
+        let response = serde_json::json!({
+            "servers": servers,
+            "total_count": servers.len()
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&response).unwrap(),
+        )]))
+    }
 }
 
 impl ServerHandler for InspectorServer {
@@ -518,6 +611,34 @@ struct ServerInspectParams {
     /// Name of the MCP server to inspect
     server: String,
 }
+
+/// Parameters for config_add_server tool
+#[derive(Deserialize, JsonSchema)]
+struct ConfigAddServerParams {
+    /// Server identification name (must be unique)
+    name: String,
+    /// Transport type (currently only "stdio" is supported)
+    transport: String,
+    /// Path to executable file
+    command: String,
+    /// Command line arguments (optional)
+    #[serde(default)]
+    args: Option<Vec<String>>,
+    /// Environment variables (optional)
+    #[serde(default)]
+    env: Option<HashMap<String, String>>,
+}
+
+/// Parameters for config_remove_server tool
+#[derive(Deserialize, JsonSchema)]
+struct ConfigRemoveServerParams {
+    /// Name of the server to remove
+    name: String,
+}
+
+/// Parameters for config_list_servers tool
+#[derive(Deserialize, JsonSchema)]
+struct ConfigListServersParams {}
 
 /// Run the MCP Inspector server
 pub async fn run_server(inspector: InspectorService) -> anyhow::Result<()> {

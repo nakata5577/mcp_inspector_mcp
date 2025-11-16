@@ -2,6 +2,7 @@
 /target
 **/target/
 Cargo.lock
+*.exe
 
 # IDE
 .vscode/
@@ -22,5 +23,8 @@ Thumbs.db
 
 # Examples (optional, uncomment if needed)
 # /examples/
+
+# Project-specific
+.inspector/
 
 .serena/

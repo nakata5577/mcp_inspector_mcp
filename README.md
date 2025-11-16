@@ -75,94 +75,125 @@ cargo build --release
 
 ### 2. 設定方法 ⚙️
 
-MCP Inspector MCPは、**CLI引数方式**（推奨）と**環境変数方式**（後方互換性）の2つの設定方法をサポートしています。
+**Phase 8での重要な変更**: MCP Inspector MCPは、`.inspector/config.json`ファイルによる設定方式に移行しました。CLI引数と環境変数方式は廃止されました。
 
-#### 方式A: CLI引数方式（推奨） 🌟
+#### 設定ファイル: `.inspector/config.json` 🌟
 
-DSL形式で直感的に設定できます。エスケープ不要で読みやすく、`.mcp.json`で簡単に管理できます。
+プロジェクトのカレントディレクトリ直下に`.inspector/config.json`ファイルを配置します。初回起動時に自動的に`.inspector`フォルダとデフォルト設定ファイルが作成されます。
 
-**DSL形式:**
+**設定ファイルの場所:**
 ```
-name:transport:command[:arg1:arg2:...]
+{カレントディレクトリ}/.inspector/config.json
 ```
-
-**構成要素:**
-- `name`: サーバー識別名（任意の文字列）
-- `transport`: トランスポートタイプ（現在は`stdio`のみ対応）
-- `command`: 実行可能ファイルのパス
-- `arg1, arg2, ...`: サーバーに渡す引数（オプション）
-
-**例:**
-```bash
-# 引数なし
---server "fundamental_analysis:stdio:C:/path/to/fa.exe"
-
-# 引数あり
---server "technical_analysis:stdio:/path/to/ta.exe:--verbose:--debug"
-
-# Windowsパス（自動検出）
---server "my_server:stdio:D:/tools/server.exe:--port:8080"
-```
-
-**注意事項:**
-- Windowsパス（`C:/...`、`D:/...`等）は自動検出されます
-- トランスポートタイプは大文字小文字を区別しません（`stdio`, `STDIO`, `Stdio`すべて可）
-- コロン(`:`)区切りのため、引数値にコロンを含めることはできません
-- 複数サーバーを登録する場合は、`--server`を複数回指定します
-
-**CLI引数リファレンス:**
-
-| 引数 | 説明 | 例 |
-|------|------|-----|
-| `-s, --server <DSL>` | サーバー設定（複数指定可能） | `--server "fa:stdio:C:/path/to/fa.exe"` |
-| `--log-backend <TYPE>` | ログバックエンド（`memory`/`persistent`） | `--log-backend persistent` |
-| `--log-path <PATH>` | DBパス（persistent時） | `--log-path ./data/logs.db` |
-| `--log-max-logs <NUM>` | 最大ログ数 | `--log-max-logs 20000` |
-
-#### 方式B: 環境変数方式（後方互換性） 📋
-
-既存の設定方法として環境変数も引き続きサポートされます。
-
-**必須環境変数:**
-
-| 環境変数名 | 型 | 説明 | 例 |
-|-----------|-----|------|-----|
-| `MCP_INSPECTOR_SERVERS` | JSON配列 | 検査対象サーバーのリスト | `[{"name":"server1",...}]` |
-
-**オプション環境変数（ログ設定）:**
-
-| 環境変数名 | デフォルト | 説明 |
-|-----------|-----------|------|
-| `MCP_LOGGING_BACKEND` | "memory" | ログバックエンド（"memory" or "persistent"） |
-| `MCP_LOGGING_DB_PATH` | "./data/logs.db" | DBパス（persistent時必須） |
-| `MCP_LOGGING_MAX_LOGS` | 10000 | サーバーごとの最大ログ数 |
 
 **JSON設定フォーマット:**
 
 ```json
-[
-  {
-    "name": "my-server",
-    "transport": "stdio",
-    "command": "/path/to/executable",
-    "args": ["arg1", "arg2"],
-    "env": {
-      "ENV_VAR": "value"
+{
+  "servers": [
+    {
+      "name": "fundamental_analysis",
+      "transport": "stdio",
+      "command": "C:/path/to/fa.exe",
+      "args": [],
+      "env": {}
+    },
+    {
+      "name": "technical_analysis",
+      "transport": "stdio",
+      "command": "/path/to/ta.exe",
+      "args": ["--verbose", "--debug"],
+      "env": {
+        "API_KEY": "your-api-key"
+      }
     }
+  ],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
   }
-]
+}
 ```
 
-#### 設定方式の比較
+**設定項目:**
 
-| 項目 | CLI引数方式 | 環境変数方式 |
-|------|-----------|------------|
-| 読みやすさ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
-| エスケープ | 不要 | 必要（`\"`） |
-| 複数サーバー | `--server`を複数回 | JSON配列 |
-| 推奨用途 | 通常使用 | 後方互換性 |
+| 項目 | 型 | 説明 | 例 |
+|------|-----|------|-----|
+| `servers` | 配列 | 検査対象サーバーのリスト | `[{...}, {...}]` |
+| `servers[].name` | 文字列 | サーバー識別名（一意） | `"fundamental_analysis"` |
+| `servers[].transport` | 文字列 | トランスポートタイプ（現在は`stdio`のみ） | `"stdio"` |
+| `servers[].command` | 文字列 | 実行可能ファイルのパス | `"C:/path/to/fa.exe"` |
+| `servers[].args` | 配列 | コマンドライン引数（オプション） | `["--verbose"]` |
+| `servers[].env` | オブジェクト | 環境変数（オプション） | `{"API_KEY": "xxx"}` |
+| `logging.backend` | 文字列 | ログバックエンド（`memory`/`persistent`） | `"memory"` |
+| `logging.db_path` | 文字列 | DBパス（persistent時） | `"./data/logs.db"` |
+| `logging.max_logs` | 数値 | サーバーごとの最大ログ数 | `10000` |
 
-**設定優先順位:** CLI引数 > 環境変数 > デフォルト値
+**デフォルト設定:**
+
+初回起動時に以下のデフォルト設定が作成されます：
+
+```json
+{
+  "servers": [],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  }
+}
+```
+
+#### 設定操作用MCPツール 🛠️
+
+AIエージェントから直接設定を操作するための3つのMCPツールを提供しています：
+
+**1. config_add_server** - サーバー追加
+
+サーバー設定を`.inspector/config.json`に追加します。
+
+```json
+{
+  "name": "config_add_server",
+  "arguments": {
+    "name": "fundamental_analysis",
+    "transport": "stdio",
+    "command": "C:/path/to/fa.exe",
+    "args": ["--verbose"],
+    "env": {"API_KEY": "xxx"}
+  }
+}
+```
+
+**2. config_remove_server** - サーバー削除
+
+サーバー設定を削除します。
+
+```json
+{
+  "name": "config_remove_server",
+  "arguments": {
+    "name": "fundamental_analysis"
+  }
+}
+```
+
+**3. config_list_servers** - サーバー一覧
+
+登録済みサーバーの一覧を取得します。
+
+```json
+{
+  "name": "config_list_servers",
+  "arguments": {}
+}
+```
+
+**使用例:**
+```
+"fundamental_analysis"という名前でC:/path/to/fa.exeを登録してください
+```
 
 ### 3. Claude Desktopへの登録
 
@@ -173,23 +204,13 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
-#### 方式A: CLI引数方式（推奨） 🌟
-
-エスケープ不要で読みやすい設定ができます。
-
 **Windows版設定例:**
 
 ```json
 {
   "mcpServers": {
     "mcp-inspector": {
-      "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe",
-      "args": [
-        "--server", "fundamental_analysis:stdio:C:/path/to/fa.exe",
-        "--server", "technical_analysis:stdio:C:/path/to/ta.exe:--verbose",
-        "--log-backend", "persistent",
-        "--log-path", "./data/logs.db"
-      ]
+      "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe"
     }
   }
 }
@@ -201,65 +222,16 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 {
   "mcpServers": {
     "mcp-inspector": {
-      "command": "/path/to/mcp_inspector_mcp",
-      "args": [
-        "--server", "fundamental_analysis:stdio:/usr/local/bin/fa",
-        "--server", "technical_analysis:stdio:/usr/local/bin/ta:--debug",
-        "--log-backend", "memory"
-      ]
+      "command": "/path/to/mcp_inspector_mcp"
     }
   }
 }
 ```
 
-**注意事項（CLI引数方式）:**
+**注意事項:**
 - `command`パスのバックスラッシュ(`\`)は`\\`にエスケープが必要
-- `args`配列内のDSL文字列はエスケープ不要
-- 複数サーバーは`--server`を繰り返す
-
-#### 方式B: 環境変数方式（後方互換性） 📋
-
-既存の設定方法として引き続き利用可能です。
-
-**Windows版設定例:**
-
-```json
-{
-  "mcpServers": {
-    "mcp-inspector": {
-      "command": "C:\\path\\to\\mcp_inspector_mcp.exe",
-      "env": {
-        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"C:/path/to/server.exe\",\"args\":[]}]",
-        "MCP_LOGGING_BACKEND": "persistent",
-        "MCP_LOGGING_DB_PATH": "./data/logs.db",
-        "RUST_LOG": "info"
-      }
-    }
-  }
-}
-```
-
-**macOS/Linux版設定例:**
-
-```json
-{
-  "mcpServers": {
-    "mcp-inspector": {
-      "command": "/path/to/mcp_inspector_mcp",
-      "env": {
-        "MCP_INSPECTOR_SERVERS": "[{\"name\":\"my-server\",\"transport\":\"stdio\",\"command\":\"/path/to/server\",\"args\":[]}]",
-        "MCP_LOGGING_BACKEND": "memory",
-        "RUST_LOG": "info"
-      }
-    }
-  }
-}
-```
-
-**注意事項（環境変数方式）:**
-- Windowsの場合、パスの`\`は`\\`にエスケープしてください
-- JSON内のダブルクォートは`\"`でエスケープしてください
-- `command`パス内では`/`（スラッシュ）も使用可能です
+- サーバー設定は`.inspector/config.json`で管理するため、`args`や`env`は不要
+- カレントディレクトリは実行可能ファイルのディレクトリになります
 
 ### 4. ログバックエンドの選択
 

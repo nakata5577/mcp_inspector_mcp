@@ -5,6 +5,126 @@ All notable changes to MCP Inspector MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-11-16
+
+### Changed - Phase 8: `.inspector/config.json`による設定管理への移行
+
+#### 🔧 破壊的変更: 設定方式の刷新
+
+**新しい設定方式:**
+- `.inspector/config.json`ファイルによる設定管理
+- プロジェクト直下に`.inspector`フォルダを自動作成
+- 初回起動時にデフォルト設定を自動生成
+
+**廃止された機能:**
+- CLI引数方式（`--server`等）を完全削除
+- 環境変数方式（`MCP_INSPECTOR_SERVERS`等）を完全削除
+- `clap`依存関係を削除
+
+#### 📋 新機能: 設定操作用MCPツール
+
+AIエージェントから設定を直接操作できる3つのツールを追加：
+
+**1. config_add_server**
+- サーバー設定を`.inspector/config.json`に追加
+- 引数: name, transport, command, args, env
+
+**2. config_remove_server**
+- サーバー設定を削除
+- 引数: name
+
+**3. config_list_servers**
+- 登録済みサーバーの一覧を取得
+- 引数: なし
+
+#### 実装詳細
+
+**新規ファイル:**
+- `src/models/project_config.rs`: 設定ファイル構造体定義
+  - `ProjectConfig`: ルート構造体
+  - `ServerEntry`: サーバーエントリ
+  - `LoggingSettings`: ロギング設定
+- `src/services/config_manager.rs`: 設定ファイル管理
+  - `load_config()`: 設定読み込み、自動セットアップ
+  - `save_config()`: 設定保存
+  - `add_server()`: サーバー追加
+  - `remove_server()`: サーバー削除
+  - `list_servers()`: サーバー一覧
+
+**変更ファイル:**
+- `src/main.rs`: `.inspector/config.json`からの読み込みに変更
+- `src/server/mod.rs`: 3つの新MCPツールを追加
+- `src/models/server_config.rs`: `from_env()`メソッドを削除
+- `src/models/logging_config.rs`: `from_env()`メソッドを削除
+- `Cargo.toml`: `clap`依存関係を削除
+
+**削除ファイル:**
+- `tests/phase7_config_tests.rs`: 環境変数方式のテスト
+- `tests/phase7_integration_test.rs`: 環境変数方式の統合テスト
+
+#### 設定例
+
+```json
+{
+  "servers": [
+    {
+      "name": "fundamental_analysis",
+      "transport": "stdio",
+      "command": "C:/path/to/fa.exe",
+      "args": [],
+      "env": {}
+    }
+  ],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  }
+}
+```
+
+#### 移行ガイド
+
+**Phase 7（CLI引数方式）からの移行:**
+
+Before (Phase 7):
+```json
+{
+  "command": "mcp_inspector_mcp.exe",
+  "args": [
+    "--server", "fa:stdio:C:/path/to/fa.exe",
+    "--log-backend", "memory"
+  ]
+}
+```
+
+After (Phase 8):
+```json
+{
+  "command": "mcp_inspector_mcp.exe"
+}
+```
+
+そして、`.inspector/config.json`を作成：
+```json
+{
+  "servers": [
+    {
+      "name": "fa",
+      "transport": "stdio",
+      "command": "C:/path/to/fa.exe",
+      "args": [],
+      "env": {}
+    }
+  ],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  }
+}
+```
+
 ## [Unreleased]
 
 ### Added - CLI引数方式の設定サポート

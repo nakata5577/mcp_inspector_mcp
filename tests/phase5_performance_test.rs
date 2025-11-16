@@ -134,8 +134,6 @@ mod caching_tests {
 
 #[cfg(test)]
 mod parallel_processing_tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_parallel_batch_processing_structure() {
         // This test verifies that the parallel processing methods compile
@@ -152,7 +150,7 @@ mod parallel_processing_tests {
         // Test that batch processing can handle errors gracefully
         // This is a structural test that doesn't require actual servers
 
-        let servers = vec![
+        let servers = [
             "server1".to_string(),
             "server2".to_string(),
             "server3".to_string(),
@@ -165,8 +163,6 @@ mod parallel_processing_tests {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
-
     /// This test verifies the overall performance improvement strategy
     /// by checking that all components are properly integrated
     #[test]
