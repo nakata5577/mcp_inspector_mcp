@@ -22,15 +22,6 @@
                 "--enable-web-dashboard=false"
             ],
             "env": {}
-        },
-        "mcp-inspector": {
-            "command": "C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\mcp_inspector_mcp.exe",
-            "args": [
-                "--server",
-                "mcp-inspector:stdio:C:\\Users\\takah\\work\\my_mcp_server\\mcp_inspector_mcp\\target\\release\\mcp_inspector_mcp.exe",
-                "--log-backend",
-                "memory"
-            ]
         }
     }
 }
