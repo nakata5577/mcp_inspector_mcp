@@ -8,7 +8,7 @@ use rmcp::handler::server::ServerHandler;
 use rmcp::model::*;
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::ErrorData as McpError;
-use rmcp::{handler::server::tool::ToolRouter, tool, tool_router};
+use rmcp::{handler::server::tool::{ToolRouter, ToolCallContext}, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -378,6 +378,9 @@ impl ServerHandler for InspectorServer {
     fn get_info(&self) -> InitializeResult {
         InitializeResult {
             protocol_version: ProtocolVersion::V_2024_11_05,
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
             server_info: Implementation {
                 name: "mcp-inspector".into(),
                 version: "0.1.0".into(),
@@ -386,7 +389,6 @@ impl ServerHandler for InspectorServer {
                 website_url: None,
             },
             instructions: None,
-            ..Default::default()
         }
     }
 
@@ -412,136 +414,11 @@ impl ServerHandler for InspectorServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParam,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        // Find and call the appropriate tool based on the name
-        match request.name.as_ref() {
-            "tools_list" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<ToolsListParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.tools_list(params).await
-            }
-            "tools_call" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<ToolsCallParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.tools_call(params).await
-            }
-            "resources_list" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<ResourcesListParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.resources_list(params).await
-            }
-            "resources_read" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<ResourceReadParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                    code: ErrorCode(-32602),
-                    message: format!("Invalid parameters: {}", e).into(),
-                    data: None,
-                })?;
-
-                self.resources_read(params).await
-            }
-            "prompts_list" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<PromptsListParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.prompts_list(params).await
-            }
-            "prompts_get" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<PromptGetParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.prompts_get(params).await
-            }
-            "sampling_logs" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<SamplingLogsParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                    code: ErrorCode(-32602),
-                    message: format!("Invalid parameters: {}", e).into(),
-                    data: None,
-                })?;
-
-                self.sampling_logs(params).await
-            }
-            "server_inspect" => {
-                let params_value = request
-                    .arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::json!({}));
-
-                let params: Parameters<ServerInspectParams> = serde_json::from_value(params_value)
-                    .map_err(|e| McpError {
-                        code: ErrorCode(-32602),
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
-                    })?;
-
-                self.server_inspect(params).await
-            }
-            _ => Err(McpError {
-                code: ErrorCode(-32601),
-                message: format!("Unknown tool: {}", request.name).into(),
-                data: None,
-            }),
-        }
+        // Delegate to tool_router for automatic routing
+        let tool_context = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tool_context).await
     }
 }
 
