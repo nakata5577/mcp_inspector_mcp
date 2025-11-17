@@ -105,18 +105,27 @@ impl InspectorService {
         })
     }
 
-    /// Call a tool on the specified server with the given arguments
     pub async fn call_tool(&self, request: ToolCallRequest) -> Result<ToolCallResponse> {
+        // DEBUG: Log the request
+        tracing::info!("=== INSPECTOR CALL_TOOL DEBUG ===");
+        tracing::info!("Request server: {}", request.server);
+        tracing::info!("Request tool_name: {}", request.tool_name);
+        tracing::info!("Request arguments: {:?}", request.arguments);
+
         let client = self
             .client_manager
             .get_client(&request.server)
             .await
             .context("Failed to get client")?;
 
+        tracing::info!("Client acquired for server: {}", request.server);
+
         let result = client
             .call_tool(&request.tool_name, request.arguments)
             .await
             .context("Failed to call tool on server")?;
+
+        tracing::info!("Tool result from client: {:?}", result);
 
         Ok(ToolCallResponse {
             server: request.server,

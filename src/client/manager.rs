@@ -83,13 +83,20 @@ impl ClientManager {
             Arc::clone(&self.sampling_logger),
         ));
 
+        // IMPORTANT: Establish connection before adding to pool
+        // This ensures the client is ready to use when returned
+        client.connect_if_needed().await?;
+
         // Store the client in the pool (write lock)
         {
             let mut clients = self.clients.write().await;
             clients.insert(server_name.to_string(), Arc::clone(&client));
         }
 
-        tracing::debug!(server = server_name, "Created new client and added to pool");
+        tracing::debug!(
+            server = server_name,
+            "Created new client, established connection, and added to pool"
+        );
 
         Ok(Box::new(client))
     }
@@ -151,6 +158,10 @@ impl ClientManager {
             Arc::clone(&self.sampling_logger),
         ));
 
+        // IMPORTANT: Establish connection before adding to pool
+        // This ensures the client is ready to use when returned
+        client.connect_if_needed().await?;
+
         // Store the client in the pool (write lock)
         {
             let mut clients = self.clients.write().await;
@@ -159,7 +170,7 @@ impl ClientManager {
 
         tracing::debug!(
             server = server_name,
-            "Created new StdioClient and added to pool"
+            "Created new StdioClient, established connection, and added to pool"
         );
 
         Ok(client)

@@ -62,8 +62,14 @@ impl StdioClient {
         Ok(init_result.clone())
     }
 
-    /// Initialize connection to the MCP server
-    async fn connect(&self) -> Result<()> {
+    /// Initialize connection to the MCP server if not already connected
+    ///
+    /// This method checks if a connection is already established and only
+    /// creates a new connection if necessary. It is safe to call multiple times.
+    ///
+    /// # Errors
+    /// Returns an error if the connection cannot be established
+    pub async fn connect_if_needed(&self) -> Result<()> {
         let mut guard = self.service.lock().await;
 
         if guard.is_some() {
@@ -103,6 +109,14 @@ impl StdioClient {
 
         *guard = Some(service);
         Ok(())
+    }
+
+    /// Initialize connection to the MCP server (internal helper)
+    ///
+    /// This is a convenience method that calls `connect_if_needed()`.
+    /// It exists to maintain backward compatibility with existing code.
+    async fn connect(&self) -> Result<()> {
+        self.connect_if_needed().await
     }
 
     /// Get reference to the service, connecting if necessary
@@ -191,6 +205,20 @@ impl McpClient for StdioClient {
         name: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value> {
+        // DEBUG: Log input arguments
+        tracing::info!("=== CALL_TOOL DEBUG (StdioClient) ===");
+        tracing::info!("Target server: {}", self.config.name);
+        tracing::info!("Tool name: {}", name);
+        tracing::info!("Arguments received (raw): {:?}", arguments);
+        tracing::info!("Arguments type: {}", match &arguments {
+            serde_json::Value::Null => "Null",
+            serde_json::Value::Bool(_) => "Bool",
+            serde_json::Value::Number(_) => "Number",
+            serde_json::Value::String(_) => "String",
+            serde_json::Value::Array(_) => "Array",
+            serde_json::Value::Object(_) => "Object",
+        });
+
         let service_arc = self.get_service().await?;
         let guard = service_arc.lock().await;
 
@@ -201,7 +229,30 @@ impl McpClient for StdioClient {
                 source: anyhow::anyhow!("Service not initialized"),
             })?;
 
-        let arguments_obj = arguments.as_object().cloned();
+        // Convert arguments to Option<serde_json::Map>
+        // This ensures that all JSON values (including empty objects, arrays, etc.) are properly handled
+        let arguments_obj = match arguments {
+            serde_json::Value::Object(map) => {
+                tracing::info!("Arguments is Object with {} keys: {:?}", map.len(), map.keys().collect::<Vec<_>>());
+                Some(map)
+            },
+            serde_json::Value::Null => {
+                tracing::info!("Arguments is Null, converting to None");
+                None
+            },
+            _ => {
+                tracing::info!("Arguments is non-Object, wrapping in 'value' key");
+                // For non-object values, wrap them in an object under "value" key
+                // or convert to empty object if conversion is not meaningful
+                let mut map = serde_json::Map::new();
+                map.insert("value".to_string(), arguments);
+                Some(map)
+            }
+        };
+
+        tracing::info!("CallToolRequestParam.arguments: {:?}", arguments_obj);
+        tracing::info!("Sending to target server: name={}, arguments={}", name, 
+            serde_json::to_string(&arguments_obj).unwrap_or_else(|_| "SERIALIZATION_ERROR".to_string()));
 
         let result = service
             .call_tool(CallToolRequestParam {
@@ -215,7 +266,12 @@ impl McpClient for StdioClient {
                 source: e.into(),
             })?;
 
-        Ok(serde_json::to_value(result).context("Failed to serialize tool result")?)
+        tracing::info!("Received from target server: {:?}", result);
+
+        let serialized = serde_json::to_value(result).context("Failed to serialize tool result")?;
+        tracing::info!("Returning to caller: {:?}", serialized);
+
+        Ok(serialized)
     }
 
     async fn disconnect(&mut self) -> Result<()> {
@@ -438,6 +494,7 @@ impl McpClient for Arc<StdioClient> {
         name: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value> {
+        // Delegate to the inner implementation
         (**self).call_tool(name, arguments).await
     }
 

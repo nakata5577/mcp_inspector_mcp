@@ -61,24 +61,50 @@ impl InspectorServer {
         )]))
     }
 
-    /// Call a tool on a specific MCP server with the given arguments
+    /// Call a tool on a specific MCP server
     #[tool(
         name = "tools_call",
-        description = "Call a tool on a specific MCP server with the given arguments"
+        description = "Call a specific tool on a specific MCP server with the given arguments"
     )]
     async fn tools_call(
         &self,
         params: Parameters<ToolsCallParams>,
     ) -> Result<CallToolResult, McpError> {
+        // DEBUG: Log received parameters
+        tracing::info!("=== TOOLS_CALL DEBUG (Server Handler) ===");
+        tracing::info!("Server: {}", params.0.server);
+        tracing::info!("Tool name: {}", params.0.tool_name);
+        tracing::info!("Arguments received (raw): {:?}", params.0.arguments);
+        if let Some(ref args) = params.0.arguments {
+            tracing::info!("Arguments serialized: {}", serde_json::to_string(args).unwrap_or_else(|_| "SERIALIZATION_ERROR".to_string()));
+        }
+
+        // CRITICAL FIX: Parse JSON string arguments from Claude Desktop
+        // Claude Desktop may send arguments as a JSON string instead of an object
+        let arguments_parsed = match &params.0.arguments {
+            Some(serde_json::Value::String(json_str)) => {
+                // Parse JSON string to Value
+                tracing::info!("Detected JSON string argument, parsing: {}", json_str);
+                serde_json::from_str(json_str)
+                    .map_err(|e| McpError {
+                        code: ErrorCode(-32602),
+                        message: format!("Failed to parse arguments JSON string: {}", e).into(),
+                        data: None,
+                    })?
+            }
+            Some(other) => other.clone(),
+            None => serde_json::json!({}),
+        };
+
+        tracing::info!("Arguments after parsing: {:?}", arguments_parsed);
+
         let call_request = ToolCallRequest {
             server: params.0.server.clone(),
             tool_name: params.0.tool_name.clone(),
-            arguments: params
-                .0
-                .arguments
-                .clone()
-                .unwrap_or_else(|| serde_json::json!({})),
+            arguments: arguments_parsed,
         };
+
+        tracing::info!("ToolCallRequest arguments (final): {:?}", call_request.arguments);
 
         let result = self
             .inspector
@@ -89,6 +115,8 @@ impl InspectorServer {
                 message: format!("Failed to call tool: {}", e).into(),
                 data: None,
             })?;
+
+        tracing::info!("Tool execution result: {:?}", result);
 
         let json_result = serde_json::to_value(&result).map_err(|e| McpError {
             code: ErrorCode(-32603),

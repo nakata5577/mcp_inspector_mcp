@@ -8,9 +8,15 @@ use mcp_inspector_mcp::services::config_manager;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
+    // IMPORTANT: Disable ANSI color codes to prevent JSON parse errors in MCP clients
+    // MCP protocol requires clean JSON on stdout, so we:
+    // 1. Disable ANSI colors completely (.with_ansi(false))
+    // 2. Write logs to stderr (.with_writer(std::io::stderr))
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
+        .with_ansi(false)  // Disable ANSI color codes
+        .with_writer(std::io::stderr)  // Write to stderr, not stdout
         .init();
 
     tracing::info!("MCP Inspector Server starting...");
