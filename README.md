@@ -233,7 +233,35 @@ Claude Desktopの設定ファイル（`claude_desktop_config.json`）に追加�
 - サーバー設定は`.inspector/config.json`で管理するため、`args`や`env`は不要
 - カレントディレクトリは実行可能ファイルのディレクトリになります
 
-### 4. ログバックエンドの選択
+### 4. 実行設定（オプション） 🎯
+
+`.inspector/config.json`で実行設定をカスタマイズできます。
+
+```json
+{
+  "servers": [...],
+  "logging": {...},
+  "execution_config": {
+    "tool_timeout_ms": 60000,
+    "connection_timeout_ms": 10000,
+    "retry_count": 1,
+    "auto_retry_on_timeout": false
+  }
+}
+```
+
+**設定項目:**
+
+| 項目 | デフォルト | 環境変数 | 説明 |
+|------|-----------|----------|------|
+| `tool_timeout_ms` | 30000 | `MCP_TOOL_TIMEOUT_MS` | ツール実行タイムアウト（ミリ秒） |
+| `connection_timeout_ms` | 5000 | `MCP_CONNECTION_TIMEOUT_MS` | 接続タイムアウト（ミリ秒） |
+| `retry_count` | 0 | `MCP_RETRY_COUNT` | リトライ回数 |
+| `auto_retry_on_timeout` | false | `MCP_AUTO_RETRY` | タイムアウト時の自動リトライ |
+
+**優先順位**: config.json > 環境変数 > デフォルト値
+
+### 5. ログバックエンドの選択
 
 #### Memory Backend（デフォルト）
 
@@ -275,6 +303,73 @@ mkdir -p ./data
 **ストレージサイズの目安:**
 - メモリ: 10,000件あたり約10-20MB
 - ディスク: 10,000件あたり約5-10MB（sled圧縮済み）
+
+---
+
+## エラーハンドリング 🛡️
+
+v0.3.1から、構造化されたエラーレポート機能を提供しています。
+
+### エラータイプ
+
+- **Timeout**: ツール実行がタイムアウト（デフォルト30秒、設定でカスタマイズ可能）
+- **ServerCrash**: サーバープロセスがクラッシュ
+- **InvalidResponse**: サーバーからの不正なレスポンス
+- **CommunicationError**: 通信エラー
+- **ServerError**: サーバー側のエラー
+- **Other**: その他のエラー
+
+### エラー情報
+
+エラー発生時には、以下の情報が含まれます：
+
+- **タイムスタンプ**: エラー発生時刻（RFC3339形式）
+- **リクエストID**: エラーが発生したリクエストの識別子（オプション）
+- **エラータイプ**: 上記のエラータイプ
+- **詳細メッセージ**: エラーの詳細
+- **ユーザーメッセージ**: わかりやすいエラーメッセージ
+- **提案**: エラー解決のための提案（該当する場合）
+
+### タイムアウトエラーの例
+
+```json
+{
+  "error": {
+    "type": "Timeout",
+    "tool_name": "slow_operation",
+    "elapsed_ms": 30500,
+    "configured_timeout_ms": 30000,
+    "server_alive": true,
+    "suggestion": "Increase tool_timeout_ms in config.json or set MCP_TOOL_TIMEOUT_MS environment variable"
+  },
+  "timestamp": "2025-11-18T10:30:00Z",
+  "request_id": "req-12345"
+}
+```
+
+## Capability検証 🔍
+
+v0.3.1から、MCPサーバーのcapabilities（サポート機能）を検証する機能を追加しました。
+
+### 自動検証
+
+サーバーへのリクエスト前に、以下を自動的に検証します：
+
+- **Tools**: ツール実行機能のサポート
+- **Resources**: リソース提供機能のサポート
+- **Prompts**: プロンプトテンプレート機能のサポート
+
+### ベストエフォート方式
+
+サーバーがcapabilityをサポートしていない場合、警告メッセージがログに出力されますが、実行は継続されます。これにより、部分的な機能実装のサーバーでも動作します。
+
+### 警告メッセージの例
+
+```
+WARN Warning: Server 'example_server' does not support tools capability, but attempting to call tool 'list_files'
+```
+
+サーバーが期待する機能をサポートしていない可能性がある場合、この警告を確認することで問題を早期に発見できます。
 
 ---
 

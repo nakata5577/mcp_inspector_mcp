@@ -1,4 +1,5 @@
 pub mod error;
+pub mod execution_config;
 pub mod health;
 pub mod logging_config;
 pub mod logging_inspection;
@@ -9,6 +10,7 @@ pub mod server_config;
 pub mod server_info;
 
 pub use error::{InspectorError, Result};
+pub use execution_config::ExecutionConfig;
 pub use health::{
     HealthCheckRequest, HealthCheckResponse, HealthCheckResult, HealthHistory, HealthStatus,
 };

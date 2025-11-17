@@ -3,6 +3,7 @@ pub mod monitoring_transport;
 pub mod stdio_client;
 
 use crate::models::{PromptInfo, PromptMessage, ResourceContent, ResourceInfo, Result, ToolInfo};
+use rmcp::model::ServerCapabilities;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
@@ -40,6 +41,14 @@ pub trait McpClient: Send + Sync {
 
     /// Disconnect from the server
     async fn disconnect(&mut self) -> Result<()>;
+
+    /// Get server capabilities
+    ///
+    /// Returns the server capabilities if available, or None if the
+    /// client is not yet connected or capabilities were not provided.
+    async fn capabilities(&self) -> Option<ServerCapabilities> {
+        None // Default implementation returns None
+    }
 }
 
 pub use manager::ClientManager;

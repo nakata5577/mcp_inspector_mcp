@@ -5,6 +5,67 @@ All notable changes to MCP Inspector MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-11-18
+
+### Added
+
+#### Task 1.1: タイムアウトとエラーハンドリングの強化
+- **ツール実行タイムアウト**: MCPツール実行時のタイムアウト機能を追加（デフォルト30秒）
+- **プロセス生存確認**: タイムアウト時にサーバープロセスの生存状態を確認
+- **詳細ログ機能**: ツール呼び出しの開始～終了を追跡し、実行時間を測定
+- 環境変数 `MCP_TOOL_TIMEOUT_MS` でタイムアウトをカスタマイズ可能
+
+#### Task 1.2: エラーレポートの構造化
+- **ToolExecutionError enum**: 6種類のエラータイプ（Timeout、ServerCrash、InvalidResponse、CommunicationError、ServerError、Other）
+- **ErrorResponse構造体**: タイムスタンプ、リクエストID付きのエラー情報
+- **ユーザーフレンドリーなエラーメッセージ**: `user_message()`メソッドでわかりやすいメッセージを生成
+- **JSON形式でのシリアライズ**: `to_json()`メソッドで構造化されたエラー情報を出力
+
+#### Task 1.3: Capability検証と警告機能
+- **CapabilityValidator**: MCPサーバーのcapabilitiesを検証し、機能不整合を検出
+- **ベストエフォート方式**: 警告を出力するが実行は継続
+- **3つのcapability検証**: Tools、Resources、Promptsのサポート状況を確認
+- **詳細な警告メッセージ**: どのcapabilityが不足しているか明示
+
+#### Task 1.4: タイムアウト設定のカスタマイズ
+- **ExecutionConfig構造体**: 実行設定を一元管理
+  - `tool_timeout_ms`: ツールタイムアウト（デフォルト: 30000ms）
+  - `connection_timeout_ms`: 接続タイムアウト（デフォルト: 5000ms）
+  - `retry_count`: リトライ回数（デフォルト: 0）
+  - `auto_retry_on_timeout`: 自動リトライフラグ（デフォルト: false）
+- **config.json対応**: `.inspector/config.json`で実行設定をカスタマイズ可能
+- **環境変数サポート継続**: 後方互換性を完全に維持
+- **優先順位**: config.json > 環境変数 > デフォルト値
+
+#### Task 1.5: 品質保証
+- **統合テストの追加**: 109テスト全て成功（既存58 + 新規51）
+- **テストカバレッジ測定**: 主要モジュールで高いカバレッジを達成（execution_config.rs: 94.02%）
+- **パフォーマンステスト**: 全テストが0.1秒以内に実行完了
+
+### Changed
+- `StdioClient`: capabilities情報を保存・提供する機能を追加
+- `InspectorService`: 各操作前にcapabilityを検証
+- ハードコードされた環境変数読み込みをExecutionConfig経由に変更
+
+### Fixed
+- タイムアウト時のエラーメッセージが不明瞭だった問題を解決
+- サーバーcapabilityとクライアントリクエストの矛盾が検出されなかった問題を解決
+
+### Technical Details
+- **新規ファイル**:
+  - `src/error.rs` (約186行)
+  - `src/models/execution_config.rs` (約203行)
+  - `src/services/capability_validator.rs` (約242行)
+  - `tests/task1_3_capability_validator_test.rs` (24テスト)
+  - `tests/task1_4_execution_config_test.rs` (19テスト)
+  - `tests/error_structure_test.rs` (8テスト)
+
+- **修正ファイル**: 15ファイル以上
+- **依存関係追加**: `serial_test = "3"` (dev-dependencies)
+- **総テスト数**: 109テスト（全て成功）
+
+---
+
 ## [0.3.0] - 2025-11-16
 
 ### Changed - Phase 8: `.inspector/config.json`による設定管理への移行

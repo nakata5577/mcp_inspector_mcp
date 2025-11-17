@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use super::execution_config::ExecutionConfig;
 
 /// `.inspector/config.json`ファイルのルート構造体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +9,9 @@ pub struct ProjectConfig {
     pub servers: Vec<ServerEntry>,
     /// ロギング設定
     pub logging: LoggingSettings,
+    /// 実行設定（タイムアウト、リトライなど）
+    #[serde(default)]
+    pub execution_config: ExecutionConfig,
 }
 
 /// MCPサーバーエントリ
@@ -47,6 +51,7 @@ impl Default for ProjectConfig {
                 db_path: "./data/logs.db".to_string(),
                 max_logs: 10000,
             },
+            execution_config: ExecutionConfig::default(),
         }
     }
 }

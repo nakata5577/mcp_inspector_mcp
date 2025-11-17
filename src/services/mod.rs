@@ -1,3 +1,4 @@
+mod capability_validator;
 mod logger_backend;
 mod logger_factory;
 mod logging_inspector;
@@ -11,6 +12,7 @@ pub mod inspector;
 pub mod response_cache;
 pub mod sampling_logger;
 
+pub use capability_validator::{CapabilityValidationResult, CapabilityValidator};
 pub use health_checker::HealthChecker;
 pub use inspector::InspectorService;
 pub use logger_backend::LoggerBackend;

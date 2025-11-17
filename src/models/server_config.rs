@@ -1,4 +1,4 @@
-use crate::models::{InspectorError, LoggingConfig};
+use crate::models::{ExecutionConfig, InspectorError, LoggingConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -36,6 +36,10 @@ pub struct InspectorConfig {
     /// Logging configuration (optional)
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Execution configuration (optional)
+    #[serde(default)]
+    pub execution_config: ExecutionConfig,
 }
 
 impl ServerConfig {

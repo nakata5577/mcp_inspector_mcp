@@ -1,33 +1,48 @@
 use crate::client::{McpClient, MonitoringTransport};
+use crate::error::ToolExecutionError;
 use crate::models::{
-    InspectorError, PromptArgument, PromptInfo, PromptMessage, ResourceContent, ResourceInfo,
+    ExecutionConfig, InspectorError, PromptArgument, PromptInfo, PromptMessage, ResourceContent, ResourceInfo,
     Result, ServerConfig, ToolInfo,
 };
 use crate::services::SamplingLogger;
 use anyhow::Context;
 use async_trait::async_trait;
-use rmcp::model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam};
+use rmcp::model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam, ServerCapabilities};
 use rmcp::service::{RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 /// MCP client using stdio transport
 pub struct StdioClient {
     config: ServerConfig,
+    execution_config: ExecutionConfig,
     service: Arc<Mutex<Option<RunningService<RoleClient, ()>>>>,
     sampling_logger: Arc<SamplingLogger>,
+    capabilities: Arc<Mutex<Option<ServerCapabilities>>>,
 }
 
 impl StdioClient {
     /// Create a new StdioClient from server configuration
-    pub fn new(config: ServerConfig, sampling_logger: Arc<SamplingLogger>) -> Self {
+    ///
+    /// # Arguments
+    /// * `config` - Server configuration
+    /// * `execution_config` - Execution configuration (timeout, retry, etc.)
+    /// * `sampling_logger` - Logger for monitoring
+    pub fn new(
+        config: ServerConfig,
+        execution_config: ExecutionConfig,
+        sampling_logger: Arc<SamplingLogger>,
+    ) -> Self {
         Self {
             config,
+            execution_config,
             service: Arc::new(Mutex::new(None)),
             sampling_logger,
+            capabilities: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -108,6 +123,12 @@ impl StdioClient {
                 })?;
 
         *guard = Some(service);
+
+        // Store server capabilities for validation
+        if let Some(peer_info) = guard.as_ref().and_then(|s| s.peer_info()) {
+            let mut caps_guard = self.capabilities.lock().await;
+            *caps_guard = Some(peer_info.capabilities.clone());
+        }
         Ok(())
     }
 
@@ -159,6 +180,55 @@ impl StdioClient {
 
         Ok(())
     }
+
+    /// Check if the server process is still alive
+    ///
+    /// This method attempts to determine if the underlying server process
+    /// is still running. This is useful for diagnosing timeout issues.
+    ///
+    /// # Implementation Notes
+    /// Currently, this method performs a best-effort check by attempting
+    /// to verify service availability. A more robust implementation would
+    /// track the child process handle and check its status directly.
+    ///
+    /// # Returns
+    /// - `true` if the service appears to be available
+    /// - `false` if the service is definitely unavailable
+    async fn is_server_process_alive(&self) -> bool {
+        let guard = self.service.lock().await;
+
+        // If service is not initialized, process is definitely not alive
+        if guard.is_none() {
+            tracing::debug!("Server process check: service not initialized");
+            return false;
+        }
+
+        // Service is initialized, which indicates the process was alive at some point
+        // A more robust check would involve:
+        // 1. On Windows: Using WaitForSingleObject with WAIT_TIMEOUT to check process status
+        // 2. On Unix: Using waitpid with WNOHANG to check process status
+        //
+        // However, rmcp's TokioChildProcess doesn't expose the underlying process handle,
+        // so we rely on service availability as a proxy for process liveness.
+        //
+        // Future enhancement: Extend rmcp to expose process status or implement
+        // process tracking separately in StdioClient.
+
+        tracing::debug!("Server process check: service is initialized (assuming alive)");
+        true
+    }
+
+    /// Get server capabilities
+    ///
+    /// Returns the server capabilities if available, or None if the
+    /// client is not yet connected or capabilities were not provided.
+    ///
+    /// # Returns
+    /// Optional reference to ServerCapabilities
+    pub async fn capabilities(&self) -> Option<ServerCapabilities> {
+        let guard = self.capabilities.lock().await;
+        guard.clone()
+    }
 }
 
 #[async_trait]
@@ -205,10 +275,15 @@ impl McpClient for StdioClient {
         name: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value> {
+        // Use timeout from execution config
+        let timeout_ms = self.execution_config.tool_timeout_ms;
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
         // DEBUG: Log input arguments
         tracing::info!("=== CALL_TOOL DEBUG (StdioClient) ===");
         tracing::info!("Target server: {}", self.config.name);
         tracing::info!("Tool name: {}", name);
+        tracing::info!("Timeout: {}ms", timeout_ms);
         tracing::info!("Arguments received (raw): {:?}", arguments);
         tracing::info!("Arguments type: {}", match &arguments {
             serde_json::Value::Null => "Null",
@@ -218,6 +293,8 @@ impl McpClient for StdioClient {
             serde_json::Value::Array(_) => "Array",
             serde_json::Value::Object(_) => "Object",
         });
+
+        let start_time = std::time::Instant::now();
 
         let service_arc = self.get_service().await?;
         let guard = service_arc.lock().await;
@@ -251,20 +328,107 @@ impl McpClient for StdioClient {
         };
 
         tracing::info!("CallToolRequestParam.arguments: {:?}", arguments_obj);
-        tracing::info!("Sending to target server: name={}, arguments={}", name, 
+        tracing::info!("Sending to target server: name={}, arguments={}", name,
             serde_json::to_string(&arguments_obj).unwrap_or_else(|_| "SERIALIZATION_ERROR".to_string()));
 
-        let result = service
-            .call_tool(CallToolRequestParam {
-                name: name.to_string().into(),
-                arguments: arguments_obj,
-            })
-            .await
-            .map_err(|e| InspectorError::ToolExecutionFailed {
-                server: self.config.name.clone(),
-                tool: name.to_string(),
-                source: e.into(),
-            })?;
+        // Execute tool call with timeout
+        let tool_call_future = service.call_tool(CallToolRequestParam {
+            name: name.to_string().into(),
+            arguments: arguments_obj,
+        });
+
+        let result = match timeout(timeout_duration, tool_call_future).await {
+            Ok(Ok(response)) => {
+                let elapsed = start_time.elapsed();
+                tracing::info!(
+                    "Tool '{}' completed successfully in {}ms",
+                    name,
+                    elapsed.as_millis()
+                );
+                Ok(response)
+            }
+            Ok(Err(e)) => {
+                let elapsed = start_time.elapsed();
+                let error_string = e.to_string();
+
+                // エラーの種類に応じて適切なToolExecutionErrorを生成
+                let error = if error_string.contains("server terminated") || error_string.contains("process") {
+                    ToolExecutionError::ServerCrash {
+                        tool_name: name.to_string(),
+                        exit_code: None,
+                        stderr: error_string.clone(),
+                        last_log: None,
+                    }
+                } else if error_string.contains("parse") || error_string.contains("invalid") || error_string.contains("deserialize") {
+                    ToolExecutionError::InvalidResponse {
+                        tool_name: name.to_string(),
+                        received: error_string.clone(),
+                        expected_format: "Valid JSON response".to_string(),
+                        parse_error: error_string.clone(),
+                    }
+                } else if error_string.contains("connection") || error_string.contains("io") || error_string.contains("channel") {
+                    ToolExecutionError::CommunicationError {
+                        tool_name: name.to_string(),
+                        details: error_string.clone(),
+                        suggestion: Some("Check if the server process is still running and responsive".to_string()),
+                    }
+                } else {
+                    ToolExecutionError::ServerError {
+                        tool_name: name.to_string(),
+                        error_message: error_string.clone(),
+                        error_code: None,
+                    }
+                };
+
+                tracing::error!(
+                    "Tool '{}' failed after {}ms: {}",
+                    name,
+                    elapsed.as_millis(),
+                    error.user_message()
+                );
+                tracing::error!("Structured error details: {}", serde_json::to_string_pretty(&error.to_json()).unwrap_or_else(|_| "Failed to serialize".to_string()));
+
+                Err(InspectorError::ToolExecutionFailed {
+                    server: self.config.name.clone(),
+                    tool: name.to_string(),
+                    source: anyhow::anyhow!("{}", error.user_message()),
+                })
+            }
+            Err(_elapsed) => {
+                // Timeout occurred
+                let elapsed_ms = start_time.elapsed().as_millis() as u64;
+
+                // Check if server process is still alive
+                let server_alive = self.is_server_process_alive().await;
+
+                let error = ToolExecutionError::Timeout {
+                    tool_name: name.to_string(),
+                    elapsed_ms,
+                    configured_timeout_ms: timeout_ms,
+                    server_alive,
+                    suggestion: Some(format!(
+                        "Try increasing timeout with environment variable: MCP_TOOL_TIMEOUT_MS={}",
+                        timeout_ms * 2
+                    )),
+                };
+
+                tracing::error!("{}", error.user_message());
+                tracing::error!("Structured error details: {}", serde_json::to_string_pretty(&error.to_json()).unwrap_or_else(|_| "Failed to serialize".to_string()));
+
+                if !server_alive {
+                    Err(InspectorError::ConnectionFailed {
+                        server: self.config.name.clone(),
+                        source: anyhow::anyhow!("{}", error.user_message()),
+                    })
+                } else {
+                    Err(InspectorError::ToolExecutionFailed {
+                        server: self.config.name.clone(),
+                        tool: name.to_string(),
+                        source: anyhow::anyhow!("{}", error.user_message()),
+                    })
+                }
+            }
+        }?;
 
         tracing::info!("Received from target server: {:?}", result);
 
@@ -522,5 +686,10 @@ impl McpClient for Arc<StdioClient> {
         // For Arc, we can't mutate the inner value directly
         // Connection cleanup will happen when the Arc is dropped
         Ok(())
+    }
+
+    async fn capabilities(&self) -> Option<ServerCapabilities> {
+        // Delegate to the inner implementation
+        (**self).capabilities().await
     }
 }

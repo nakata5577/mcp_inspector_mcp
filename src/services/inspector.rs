@@ -7,7 +7,7 @@ use crate::models::{
     ToolCallResponse, ToolsListResponse,
 };
 use crate::services::{
-    create_logger, HealthChecker, LoggingInspector, ResponseCache, SamplingLogger,
+    create_logger, CapabilityValidationResult, CapabilityValidator, HealthChecker, LoggingInspector, ResponseCache, SamplingLogger,
     ServerInfoService,
 };
 use anyhow::Context;
@@ -47,8 +47,12 @@ impl InspectorService {
         // Create response cache with default 5-minute TTL
         let response_cache = Arc::new(ResponseCache::new(Duration::from_secs(300)));
 
+        // Merge execution config with environment variables
+        let execution_config = config.execution_config.merge_with_env();
+
         let client_manager = Arc::new(ClientManager::new(
             config.servers,
+            execution_config,
             Arc::clone(&sampling_logger),
         ));
 
@@ -119,6 +123,14 @@ impl InspectorService {
             .context("Failed to get client")?;
 
         tracing::info!("Client acquired for server: {}", request.server);
+
+        // Validate server capabilities
+        let capabilities = client.capabilities().await;
+        let validator = CapabilityValidator::new(capabilities);
+        let validation_result = validator.validate_tools_call(&request.tool_name);
+        if let CapabilityValidationResult::Warning { message } = validation_result {
+            tracing::warn!("{}", message);
+        }
 
         let result = client
             .call_tool(&request.tool_name, request.arguments)
@@ -194,6 +206,14 @@ impl InspectorService {
             .await
             .context("Failed to get client")?;
 
+        // Validate server capabilities
+        let capabilities = client.capabilities().await;
+        let validator = CapabilityValidator::new(capabilities);
+        let validation_result = validator.validate_resources_read(&request.uri);
+        if let CapabilityValidationResult::Warning { message } = validation_result {
+            tracing::warn!("{}", message);
+        }
+
         let contents = client
             .read_resource(&request.uri)
             .await
@@ -254,6 +274,14 @@ impl InspectorService {
             .get_client(&request.server)
             .await
             .context("Failed to get client")?;
+
+        // Validate server capabilities
+        let capabilities = client.capabilities().await;
+        let validator = CapabilityValidator::new(capabilities);
+        let validation_result = validator.validate_prompts_get(&request.name);
+        if let CapabilityValidationResult::Warning { message } = validation_result {
+            tracing::warn!("{}", message);
+        }
 
         let messages = client
             .get_prompt(&request.name, request.arguments)

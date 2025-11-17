@@ -28,8 +28,13 @@ async fn main() -> Result<()> {
     // Convert ProjectConfig to InspectorConfig
     let servers = convert_server_entries(&project_config.servers)?;
     let logging = convert_logging_settings(&project_config.logging);
+    let execution_config = project_config.execution_config.clone();
 
-    let config = InspectorConfig { servers, logging };
+    let config = InspectorConfig {
+        servers,
+        logging,
+        execution_config,
+    };
 
     tracing::info!("Loaded {} server configuration(s)", config.servers.len());
     tracing::info!(
@@ -40,6 +45,13 @@ async fn main() -> Result<()> {
     if config.logging.db_path.is_some() {
         tracing::info!("Database path: [CONFIGURED]");
     }
+    tracing::info!(
+        "Execution config: tool_timeout={}ms, connection_timeout={}ms, retry={}, auto_retry={}",
+        config.execution_config.tool_timeout_ms,
+        config.execution_config.connection_timeout_ms,
+        config.execution_config.retry_count,
+        config.execution_config.auto_retry_on_timeout
+    );
 
     // Initialize inspector service
     let inspector = InspectorService::new(config)
