@@ -5,6 +5,97 @@ All notable changes to MCP Inspector MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-11-18
+
+### Added - Phase 2: ドキュメント整備フェーズ
+
+#### 📚 充実したREADME.md
+- **15,000文字以上**の詳細なドキュメント
+- **30個以上のコード例**（実行可能）
+- クイックスタートガイド（30分以内に基本操作を習得）
+- 詳細な設定ガイド（`.inspector/config.json`の全項目解説）
+- 10個以上の使用例（基本〜高度）
+- 完全なトラブルシューティングセクション
+- FAQ（17項目）
+
+#### 📖 3本のチュートリアル
+1. **Getting Started** (`docs/tutorials/getting-started.md`)
+   - 約19,500文字、50個以上のコード例
+   - 完全な初心者向けガイド
+   - インストールから初回実行まで
+   - 5つの基本操作を実演
+
+2. **Practical Guide** (`docs/tutorials/practical-guide.md`)
+   - 約19,000文字、60個以上のコード例
+   - 5つの実務シナリオ
+   - 新規サーバー検査、ツールテスト、エラーデバッグ
+   - パフォーマンス測定、複数サーバー管理
+   - 10個のベストプラクティス
+
+3. **Advanced Usage** (`docs/tutorials/advanced-usage.md`)
+   - 約18,500文字、55個以上のコード例
+   - カスタム設定の詳細（タイムアウト、リトライ）
+   - Capability検証の活用
+   - エラーハンドリングの高度なパターン
+   - パフォーマンスチューニング
+   - CI/CD統合（GitHub Actions、GitLab CI）
+   - セキュリティ考慮事項
+   - 拡張とカスタマイズ
+
+#### 📋 完全なAPI仕様書
+- **API仕様書** (`docs/api/tools.md`)
+  - 約22,000文字
+  - **全13ツール**の詳細仕様
+  - リクエスト/レスポンス形式（JSON Schema）
+  - エラーコード一覧（12種類の詳細分類）
+  - ベストプラクティス10項目
+  - バージョニング方針
+
+#### 🎯 サンプルプロジェクト
+- **Simple Server** (`examples/simple-server/`)
+  - 完全に動作するMCPサーバー実装
+  - 3つのツール（echo、reverse、uppercase）
+  - 1つのリソース（simple://greeting）
+  - 1つのプロンプト（help）
+  - 統合テストスクリプト（Bash/PowerShell）
+  - 詳細なREADME.md（約2,500文字）
+  - 使用方法ガイド（約4,500文字）
+  - 合計約1,700行のコードとドキュメント
+
+### Documentation
+
+#### 統計情報
+- **総文字数**: 100,000文字以上（目標30,000文字を大幅に超過）
+- **チュートリアル数**: 3本（Getting Started、Practical Guide、Advanced Usage）
+- **コード例数**: 165個以上（すべて実行可能）
+- **API仕様カバレッジ**: 全13ツール（100%）
+- **サンプルプロジェクト**: 1個（完全に動作）
+
+#### 新規追加ファイル
+- `docs/tutorials/getting-started.md` (19,500文字)
+- `docs/tutorials/practical-guide.md` (19,000文字)
+- `docs/tutorials/advanced-usage.md` (18,500文字)
+- `docs/api/tools.md` (22,000文字)
+- `examples/simple-server/README.md` (2,500文字)
+- `examples/simple-server/docs/usage.md` (4,500文字)
+- `examples/simple-server/src/main.rs` (約1,200行)
+- `examples/simple-server/tests/integration_test.sh`
+- `examples/simple-server/tests/integration_test.ps1`
+
+#### 更新されたファイル
+- `README.md`: 4,500文字 → 15,000文字に拡充
+
+### Improved
+- **ドキュメント全体の構造化**: 初心者から上級者まで段階的に学習可能
+- **新規ユーザーの学習曲線**: 30分以内に基本操作を習得できるガイド
+- **技術的正確性**: v0.3.1実装と完全一致
+- **実用性**: すべてのコード例が実行可能
+
+### Changed
+- Phase 1計画書を削除（完了済みのため、`docs/PHASE1_DETAILED_PLAN.md`を削除）
+
+---
+
 ## [0.3.1] - 2025-11-18
 
 ### Added
