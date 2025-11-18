@@ -7,10 +7,12 @@ mod persistent_logger;
 mod server_info_service;
 
 pub mod config_manager;
+pub mod debug_logger;
 pub mod health_checker;
 pub mod inspector;
 pub mod response_cache;
 pub mod sampling_logger;
+pub mod timing_tracker;
 
 pub use capability_validator::{CapabilityValidationResult, CapabilityValidator};
 pub use health_checker::HealthChecker;

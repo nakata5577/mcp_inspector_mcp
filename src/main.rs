@@ -1,25 +1,106 @@
 use anyhow::{Context, Result};
+use clap::Parser;
 use mcp_inspector_mcp::{
-    models::{InspectorError, LoggingBackend, LoggingConfig, ServerConfig},
+    models::{debug_config, InspectorError, LoggingBackend, LoggingConfig, ServerConfig},
     run_server, InspectorConfig, InspectorService,
 };
 use mcp_inspector_mcp::services::config_manager;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// MCP Inspector Server - Monitor and debug MCP servers
+#[derive(Parser, Debug)]
+#[command(name = "mcp_inspector")]
+#[command(about = "MCP Server Inspector for monitoring and debugging", long_about = None)]
+#[command(version)]
+struct Cli {
+    /// Enable verbose debug output with detailed logging
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Optional path to configuration file (default: .inspector/config.json)
+    #[arg(short, long)]
+    config: Option<String>,
+}
+
+/// Initialize logging with optional file output
+///
+/// This function sets up the tracing subscriber with:
+/// - Configurable log level based on verbose mode
+/// - Optional file output with rotation
+/// - ANSI colors disabled for MCP compatibility
+/// - Logs written to stderr to avoid interfering with JSON-RPC on stdout
+///
+/// # Arguments
+/// * `verbose` - Enable verbose (DEBUG level) logging
+///
+/// # Returns
+/// Returns `Ok(())` on success, or an error if logging initialization fails
+fn init_logging(verbose: bool) -> Result<()> {
+    use tracing_appender::rolling::RollingFileAppender;
+
+    // Configure log level and file output based on verbose mode
+    if verbose {
+        debug_config::configure_verbose_logging(true);
+    }
+
+    let log_config = debug_config::get_log_config();
+    let log_level = log_config.level.to_tracing_level();
+
+    // Create stderr layer (always enabled)
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_ansi(false) // Disable ANSI colors for MCP compatibility
+        .with_writer(std::io::stderr);
+
+    if log_config.output_to_file {
+        // Create file appender with rotation
+        let file_appender = RollingFileAppender::new(
+            log_config.log_file_rotation.to_tracing_rotation(),
+            &log_config.log_file_path,
+            "mcp_inspector.log",
+        );
+
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+        // Create file layer
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_ansi(false)
+            .with_writer(non_blocking);
+
+        // Initialize subscriber with both stderr and file layers
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::filter::LevelFilter::from_level(log_level))
+            .with(stderr_layer)
+            .with(file_layer)
+            .init();
+
+        // Keep the guard alive for the entire program lifetime
+        // This is necessary to ensure the non_blocking writer is flushed properly
+        std::mem::forget(_guard);
+    } else {
+        // Initialize subscriber with only stderr layer
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::filter::LevelFilter::from_level(log_level))
+            .with(stderr_layer)
+            .init();
+    }
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    // IMPORTANT: Disable ANSI color codes to prevent JSON parse errors in MCP clients
-    // MCP protocol requires clean JSON on stdout, so we:
-    // 1. Disable ANSI colors completely (.with_ansi(false))
-    // 2. Write logs to stderr (.with_writer(std::io::stderr))
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(false)
-        .with_ansi(false)  // Disable ANSI color codes
-        .with_writer(std::io::stderr)  // Write to stderr, not stdout
-        .init();
+    // Parse command line arguments
+    let cli = Cli::parse();
+
+    // Initialize logging with verbose mode if requested
+    init_logging(cli.verbose).context("Failed to initialize logging")?;
 
     tracing::info!("MCP Inspector Server starting...");
+    if cli.verbose {
+        tracing::debug!("Verbose mode enabled via CLI argument");
+    }
 
     // Load configuration from .inspector/config.json
     let project_config = config_manager::load_config()
@@ -28,7 +109,18 @@ async fn main() -> Result<()> {
     // Convert ProjectConfig to InspectorConfig
     let servers = convert_server_entries(&project_config.servers)?;
     let logging = convert_logging_settings(&project_config.logging);
-    let execution_config = project_config.execution_config.clone();
+    let mut execution_config = project_config.execution_config.clone();
+
+    // CLI argument takes precedence over config file
+    if cli.verbose {
+        execution_config.verbose = true;
+    }
+
+    // Set global verbose mode based on execution config
+    if execution_config.verbose {
+        debug_config::enable_verbose_mode();
+        tracing::info!("Verbose mode enabled from {}", if cli.verbose { "CLI argument" } else { "config file" });
+    }
 
     let config = InspectorConfig {
         servers,

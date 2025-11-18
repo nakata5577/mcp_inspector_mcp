@@ -1,12 +1,12 @@
-/// Task 1.3: CapabilityValidator統合テスト
-///
-/// CapabilityValidatorの全機能をテストします：
-/// - Tools capability検証
-/// - Resources capability検証
-/// - Prompts capability検証
-/// - Capability情報がない場合の動作
-/// - 複数のcapabilityの組み合わせ
-/// - ログ出力機能
+//! Task 1.3: CapabilityValidator統合テスト
+//!
+//! CapabilityValidatorの全機能をテストします：
+//! - Tools capability検証
+//! - Resources capability検証
+//! - Prompts capability検証
+//! - Capability情報がない場合の動作
+//! - 複数のcapabilityの組み合わせ
+//! - ログ出力機能
 
 use mcp_inspector_mcp::services::{CapabilityValidationResult, CapabilityValidator};
 use rmcp::model::{
@@ -144,7 +144,7 @@ fn test_tools_validation_with_multiple_tools() {
     let validator = CapabilityValidator::new(Some(create_tools_only_capabilities()));
 
     // 同じvalidatorで複数のツールを検証
-    let results: Vec<_> = vec!["tool1", "tool2", "tool3"]
+    let results: Vec<_> = ["tool1", "tool2", "tool3"]
         .iter()
         .map(|name| validator.validate_tools_call(name))
         .collect();

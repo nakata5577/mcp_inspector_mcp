@@ -1,3 +1,4 @@
+pub mod debug_config;
 pub mod error;
 pub mod execution_config;
 pub mod health;

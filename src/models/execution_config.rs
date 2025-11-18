@@ -21,6 +21,10 @@ pub struct ExecutionConfig {
     /// タイムアウト発生時に自動的にリトライするか
     #[serde(default)]
     pub auto_retry_on_timeout: bool,
+
+    /// デバッグモードを有効化するか（詳細なログ出力）
+    #[serde(default)]
+    pub verbose: bool,
 }
 
 fn default_tool_timeout() -> u64 {
@@ -38,6 +42,7 @@ impl Default for ExecutionConfig {
             connection_timeout_ms: default_connection_timeout(),
             retry_count: 0,
             auto_retry_on_timeout: false,
+            verbose: false,
         }
     }
 }
@@ -73,6 +78,10 @@ impl ExecutionConfig {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
             auto_retry_on_timeout: std::env::var("MCP_AUTO_RETRY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
+            verbose: std::env::var("MCP_VERBOSE")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(false),
@@ -112,6 +121,7 @@ impl ExecutionConfig {
                 env_config.retry_count
             },
             auto_retry_on_timeout: self.auto_retry_on_timeout || env_config.auto_retry_on_timeout,
+            verbose: self.verbose || env_config.verbose,
         }
     }
 }
@@ -127,6 +137,7 @@ mod tests {
         assert_eq!(config.connection_timeout_ms, 5000);
         assert_eq!(config.retry_count, 0);
         assert!(!config.auto_retry_on_timeout);
+        assert!(!config.verbose);
     }
 
     #[test]
@@ -136,6 +147,7 @@ mod tests {
             connection_timeout_ms: 10000,
             retry_count: 3,
             auto_retry_on_timeout: true,
+            verbose: true,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -145,6 +157,7 @@ mod tests {
         assert_eq!(deserialized.connection_timeout_ms, 10000);
         assert_eq!(deserialized.retry_count, 3);
         assert!(deserialized.auto_retry_on_timeout);
+        assert!(deserialized.verbose);
     }
 
     #[test]
@@ -157,6 +170,7 @@ mod tests {
         assert_eq!(config.connection_timeout_ms, 5000); // default
         assert_eq!(config.retry_count, 0); // default
         assert!(!config.auto_retry_on_timeout); // default
+        assert!(!config.verbose); // default
     }
 
     #[test]
@@ -166,12 +180,14 @@ mod tests {
         std::env::remove_var("MCP_CONNECTION_TIMEOUT_MS");
         std::env::remove_var("MCP_RETRY_COUNT");
         std::env::remove_var("MCP_AUTO_RETRY");
+        std::env::remove_var("MCP_VERBOSE");
 
         let config = ExecutionConfig::from_env();
         assert_eq!(config.tool_timeout_ms, 30000);
         assert_eq!(config.connection_timeout_ms, 5000);
         assert_eq!(config.retry_count, 0);
         assert!(!config.auto_retry_on_timeout);
+        assert!(!config.verbose);
     }
 
     #[test]
@@ -186,6 +202,7 @@ mod tests {
             connection_timeout_ms: 5000, // デフォルト値
             retry_count: 0,
             auto_retry_on_timeout: false,
+            verbose: false,
         };
 
         let merged = config.merge_with_env();
@@ -198,5 +215,56 @@ mod tests {
         // クリーンアップ
         std::env::remove_var("MCP_TOOL_TIMEOUT_MS");
         std::env::remove_var("MCP_CONNECTION_TIMEOUT_MS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_verbose_from_env() {
+        // Clear any existing value first
+        std::env::remove_var("MCP_VERBOSE");
+
+        std::env::set_var("MCP_VERBOSE", "true");
+        let config = ExecutionConfig::from_env();
+        assert!(config.verbose, "MCP_VERBOSE=true should set verbose to true");
+
+        std::env::set_var("MCP_VERBOSE", "false");
+        let config = ExecutionConfig::from_env();
+        assert!(!config.verbose, "MCP_VERBOSE=false should set verbose to false");
+
+        std::env::remove_var("MCP_VERBOSE");
+    }
+
+    #[test]
+    fn test_verbose_from_config() {
+        let json = r#"{"verbose": true}"#;
+        let config: ExecutionConfig = serde_json::from_str(json).unwrap();
+        assert!(config.verbose);
+
+        let json = r#"{"verbose": false}"#;
+        let config: ExecutionConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.verbose);
+    }
+
+    #[test]
+    fn test_verbose_merge_priority() {
+        // config.jsonでverbose=trueの場合、環境変数に関係なく優先される
+        std::env::set_var("MCP_VERBOSE", "false");
+        let config = ExecutionConfig {
+            verbose: true,
+            ..Default::default()
+        };
+        let merged = config.merge_with_env();
+        assert!(merged.verbose);
+
+        // config.jsonでverbose=false、環境変数でverbose=trueの場合、環境変数が優先される
+        std::env::set_var("MCP_VERBOSE", "true");
+        let config = ExecutionConfig {
+            verbose: false,
+            ..Default::default()
+        };
+        let merged = config.merge_with_env();
+        assert!(merged.verbose);
+
+        std::env::remove_var("MCP_VERBOSE");
     }
 }

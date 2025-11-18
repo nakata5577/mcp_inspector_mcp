@@ -1,13 +1,20 @@
 use crate::client::{McpClient, MonitoringTransport};
 use crate::error::ToolExecutionError;
 use crate::models::{
-    ExecutionConfig, InspectorError, PromptArgument, PromptInfo, PromptMessage, ResourceContent, ResourceInfo,
-    Result, ServerConfig, ToolInfo,
+    debug_config, ExecutionConfig, InspectorError, PromptArgument, PromptInfo, PromptMessage,
+    ResourceContent, ResourceInfo, Result, ServerConfig, ToolInfo,
 };
-use crate::services::SamplingLogger;
+use crate::services::{
+    debug_logger::{DebugLogger, DebugLoggerConfig},
+    timing_tracker::TimingTracker,
+    SamplingLogger,
+};
 use anyhow::Context;
 use async_trait::async_trait;
-use rmcp::model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam, ServerCapabilities};
+use chrono::Local;
+use rmcp::model::{
+    CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam, ServerCapabilities,
+};
 use rmcp::service::{RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
 use std::collections::HashMap;
@@ -23,6 +30,8 @@ pub struct StdioClient {
     service: Arc<Mutex<Option<RunningService<RoleClient, ()>>>>,
     sampling_logger: Arc<SamplingLogger>,
     capabilities: Arc<Mutex<Option<ServerCapabilities>>>,
+    debug_logger: DebugLogger,
+    timing_tracker: TimingTracker,
 }
 
 impl StdioClient {
@@ -37,12 +46,21 @@ impl StdioClient {
         execution_config: ExecutionConfig,
         sampling_logger: Arc<SamplingLogger>,
     ) -> Self {
+        // Create debug logger config (disable color output for MCP compatibility)
+        let debug_logger_config = DebugLoggerConfig {
+            color_output: false,
+            max_payload_size: 4096,
+            truncate_large_payloads: true,
+        };
+
         Self {
             config,
             execution_config,
             service: Arc::new(Mutex::new(None)),
             sampling_logger,
             capabilities: Arc::new(Mutex::new(None)),
+            debug_logger: DebugLogger::new(debug_logger_config),
+            timing_tracker: TimingTracker::new(),
         }
     }
 
@@ -279,20 +297,21 @@ impl McpClient for StdioClient {
         let timeout_ms = self.execution_config.tool_timeout_ms;
         let timeout_duration = Duration::from_millis(timeout_ms);
 
-        // DEBUG: Log input arguments
-        tracing::info!("=== CALL_TOOL DEBUG (StdioClient) ===");
-        tracing::info!("Target server: {}", self.config.name);
-        tracing::info!("Tool name: {}", name);
-        tracing::info!("Timeout: {}ms", timeout_ms);
-        tracing::info!("Arguments received (raw): {:?}", arguments);
-        tracing::info!("Arguments type: {}", match &arguments {
-            serde_json::Value::Null => "Null",
-            serde_json::Value::Bool(_) => "Bool",
-            serde_json::Value::Number(_) => "Number",
-            serde_json::Value::String(_) => "String",
-            serde_json::Value::Array(_) => "Array",
-            serde_json::Value::Object(_) => "Object",
-        });
+        // Generate request ID for tracking
+        let request_id = format!("tool-{}-{}", name, Local::now().timestamp_millis());
+
+        // Verbose mode: Log request with DebugLogger and start timing
+        if debug_config::is_verbose_mode() {
+            let timestamp = Local::now();
+            self.debug_logger.log_request(
+                &self.config.name,
+                &format!("call_tool/{}", name),
+                &request_id,
+                &arguments,
+                timestamp,
+            );
+            self.timing_tracker.start_timer(&request_id);
+        }
 
         let start_time = std::time::Instant::now();
 
@@ -309,16 +328,9 @@ impl McpClient for StdioClient {
         // Convert arguments to Option<serde_json::Map>
         // This ensures that all JSON values (including empty objects, arrays, etc.) are properly handled
         let arguments_obj = match arguments {
-            serde_json::Value::Object(map) => {
-                tracing::info!("Arguments is Object with {} keys: {:?}", map.len(), map.keys().collect::<Vec<_>>());
-                Some(map)
-            },
-            serde_json::Value::Null => {
-                tracing::info!("Arguments is Null, converting to None");
-                None
-            },
+            serde_json::Value::Object(map) => Some(map),
+            serde_json::Value::Null => None,
             _ => {
-                tracing::info!("Arguments is non-Object, wrapping in 'value' key");
                 // For non-object values, wrap them in an object under "value" key
                 // or convert to empty object if conversion is not meaningful
                 let mut map = serde_json::Map::new();
@@ -326,10 +338,6 @@ impl McpClient for StdioClient {
                 Some(map)
             }
         };
-
-        tracing::info!("CallToolRequestParam.arguments: {:?}", arguments_obj);
-        tracing::info!("Sending to target server: name={}, arguments={}", name,
-            serde_json::to_string(&arguments_obj).unwrap_or_else(|_| "SERIALIZATION_ERROR".to_string()));
 
         // Execute tool call with timeout
         let tool_call_future = service.call_tool(CallToolRequestParam {
@@ -345,6 +353,24 @@ impl McpClient for StdioClient {
                     name,
                     elapsed.as_millis()
                 );
+
+                // Verbose mode: Log response with DebugLogger
+                if debug_config::is_verbose_mode() {
+                    if let Some((elapsed_ms, end_time)) = self.timing_tracker.stop_timer(&request_id)
+                    {
+                        let response_value = serde_json::to_value(&response)
+                            .unwrap_or(serde_json::Value::Null);
+                        self.debug_logger.log_response(
+                            &self.config.name,
+                            &request_id,
+                            &response_value,
+                            end_time,
+                            elapsed_ms,
+                            true, // is_success
+                        );
+                    }
+                }
+
                 Ok(response)
             }
             Ok(Err(e)) => {
@@ -388,6 +414,25 @@ impl McpClient for StdioClient {
                 );
                 tracing::error!("Structured error details: {}", serde_json::to_string_pretty(&error.to_json()).unwrap_or_else(|_| "Failed to serialize".to_string()));
 
+                // Verbose mode: Log error response with DebugLogger
+                if debug_config::is_verbose_mode() {
+                    if let Some((elapsed_ms, end_time)) = self.timing_tracker.stop_timer(&request_id)
+                    {
+                        let error_response = serde_json::json!({
+                            "error": error.user_message(),
+                            "details": error.to_json(),
+                        });
+                        self.debug_logger.log_response(
+                            &self.config.name,
+                            &request_id,
+                            &error_response,
+                            end_time,
+                            elapsed_ms,
+                            false, // is_success
+                        );
+                    }
+                }
+
                 Err(InspectorError::ToolExecutionFailed {
                     server: self.config.name.clone(),
                     tool: name.to_string(),
@@ -415,6 +460,26 @@ impl McpClient for StdioClient {
                 tracing::error!("{}", error.user_message());
                 tracing::error!("Structured error details: {}", serde_json::to_string_pretty(&error.to_json()).unwrap_or_else(|_| "Failed to serialize".to_string()));
 
+                // Verbose mode: Log timeout error with DebugLogger
+                if debug_config::is_verbose_mode() {
+                    if let Some((elapsed_ms_timing, end_time)) =
+                        self.timing_tracker.stop_timer(&request_id)
+                    {
+                        let timeout_response = serde_json::json!({
+                            "error": "Timeout",
+                            "details": error.to_json(),
+                        });
+                        self.debug_logger.log_response(
+                            &self.config.name,
+                            &request_id,
+                            &timeout_response,
+                            end_time,
+                            elapsed_ms_timing,
+                            false, // is_success
+                        );
+                    }
+                }
+
                 if !server_alive {
                     Err(InspectorError::ConnectionFailed {
                         server: self.config.name.clone(),
@@ -430,10 +495,7 @@ impl McpClient for StdioClient {
             }
         }?;
 
-        tracing::info!("Received from target server: {:?}", result);
-
         let serialized = serde_json::to_value(result).context("Failed to serialize tool result")?;
-        tracing::info!("Returning to caller: {:?}", serialized);
 
         Ok(serialized)
     }

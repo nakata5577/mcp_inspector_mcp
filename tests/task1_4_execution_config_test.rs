@@ -1,11 +1,11 @@
-/// Task 1.4: ExecutionConfig統合テスト
-///
-/// ExecutionConfigのすべての機能をテストします：
-/// - デフォルト値
-/// - 環境変数からの読み込み
-/// - JSONシリアライゼーション/デシリアライゼーション
-/// - config.jsonと環境変数のマージ
-/// - エッジケースとエラーハンドリング
+//! Task 1.4: ExecutionConfig統合テスト
+//!
+//! ExecutionConfigのすべての機能をテストします：
+//! - デフォルト値
+//! - 環境変数からの読み込み
+//! - JSONシリアライゼーション/デシリアライゼーション
+//! - config.jsonと環境変数のマージ
+//! - エッジケースとエラーハンドリング
 
 use mcp_inspector_mcp::models::ExecutionConfig;
 use serial_test::serial;
@@ -32,6 +32,7 @@ fn test_execution_config_json_serialization() {
         connection_timeout_ms: 10000,
         retry_count: 3,
         auto_retry_on_timeout: true,
+        verbose: false,
     };
 
     // JSON化して再度デシリアライズ
@@ -193,6 +194,7 @@ fn test_merge_config_overrides_env() {
         connection_timeout_ms: 5000, // デフォルト値のまま
         retry_count: 0,
         auto_retry_on_timeout: false,
+        verbose: false,
     };
 
     let merged = config.merge_with_env();
@@ -253,6 +255,7 @@ fn test_merge_auto_retry_logic() {
         connection_timeout_ms: 5000,
         retry_count: 0,
         auto_retry_on_timeout: true, // config.jsonで有効
+        verbose: false,
     };
 
     let merged1 = config1.merge_with_env();
@@ -266,6 +269,7 @@ fn test_merge_auto_retry_logic() {
         connection_timeout_ms: 5000,
         retry_count: 0,
         auto_retry_on_timeout: false, // config.jsonで無効
+        verbose: false,
     };
 
     let merged2 = config2.merge_with_env();
@@ -287,6 +291,7 @@ fn test_execution_config_extreme_timeout_values() {
         connection_timeout_ms: 1,
         retry_count: 0,
         auto_retry_on_timeout: false,
+        verbose: false,
     };
 
     // JSON化しても値は保持される
@@ -301,6 +306,7 @@ fn test_execution_config_extreme_timeout_values() {
         connection_timeout_ms: 600_000, // 10分
         retry_count: 100,
         auto_retry_on_timeout: true,
+        verbose: false,
     };
 
     let json = serde_json::to_string(&config_large).unwrap();
@@ -318,6 +324,7 @@ fn test_execution_config_zero_timeout() {
         connection_timeout_ms: 0,
         retry_count: 0,
         auto_retry_on_timeout: false,
+        verbose: false,
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -334,6 +341,7 @@ fn test_execution_config_high_retry_count() {
         connection_timeout_ms: 5000,
         retry_count: 999,
         auto_retry_on_timeout: true,
+        verbose: false,
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -353,6 +361,7 @@ fn test_production_config_scenario() {
         connection_timeout_ms: 10_000, // 10秒
         retry_count: 3,
         auto_retry_on_timeout: true,
+        verbose: false,
     };
 
     // 設定が正しく保存・復元できることを確認
@@ -373,6 +382,7 @@ fn test_development_config_scenario() {
         connection_timeout_ms: 1_000, // 1秒
         retry_count: 0,
         auto_retry_on_timeout: false,
+        verbose: false,
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -410,6 +420,7 @@ fn test_config_priority_chain() {
         connection_timeout_ms: 5000,
         retry_count: 0,
         auto_retry_on_timeout: false,
+        verbose: false,
     };
     let final_config = json_config.merge_with_env();
     assert_eq!(final_config.tool_timeout_ms, 70000, "Config.json should have highest priority");
@@ -429,6 +440,7 @@ fn test_execution_config_clone() {
         connection_timeout_ms: 6000,
         retry_count: 2,
         auto_retry_on_timeout: true,
+        verbose: false,
     };
 
     let config2 = config1.clone();
