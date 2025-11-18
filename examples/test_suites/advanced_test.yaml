@@ -1,0 +1,129 @@
+name: "Advanced MCP Server Test Suite"
+version: "1.0"
+description: "Comprehensive test suite with advanced features"
+
+config:
+  timeout_ms: 30000
+  retry_count: 2
+  fail_fast: false
+  parallel: true
+
+tests:
+  - name: "Server Health Check"
+    description: "Verify server is responsive and healthy"
+    tool: "health_check"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "status"
+        expected: "healthy"
+      - type: "response_time"
+        operator: "<"
+        expected: 500
+      - type: "error_rate"
+        operator: "<"
+        expected: 0.05
+
+  - name: "Get Tools List"
+    description: "Verify server provides expected tools"
+    tool: "tools_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "tools"
+      - type: "array_length"
+        field: "tools"
+        operator: ">"
+        expected: 0
+
+  - name: "Call Tool with Arguments"
+    description: "Test tool execution with complex arguments"
+    tool: "tools_call"
+    server: "fundamental_analysis"
+    arguments:
+      tool_name: "calculate_rsi"
+      arguments:
+        symbol: "AAPL"
+        period: 14
+    assertions:
+      - type: "field_exists"
+        field: "result.content"
+      - type: "field_exists"
+        field: "result.content.0.text"
+
+  - name: "Error Handling Test"
+    description: "Verify proper error handling for invalid input"
+    tool: "tools_call"
+    server: "fundamental_analysis"
+    arguments:
+      name: "error_tool"
+      arguments: {}
+    expect_error: true
+    assertions:
+      - type: "error_message_contains"
+        expected: "failed"
+
+  - name: "Nested Field Access"
+    description: "Test accessing nested JSON fields"
+    tool: "tools_call"
+    server: "fundamental_analysis"
+    arguments:
+      tool_name: "get_data"
+      arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "result.content.0.text"
+      - type: "json_value_type"
+        field: "result.content.0.text"
+        expected: "string"
+
+  - name: "Resources List Verification"
+    description: "Verify server provides resources"
+    tool: "resources_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "resources"
+      - type: "array_length"
+        field: "resources"
+        operator: ">="
+        expected: 0
+
+  - name: "Resource Read Test"
+    description: "Test reading a specific resource"
+    tool: "resource_read"
+    server: "fundamental_analysis"
+    arguments:
+      uri: "resource://1"
+    assertions:
+      - type: "field_exists"
+        field: "contents"
+      - type: "array_length"
+        field: "contents"
+        operator: ">"
+        expected: 0
+
+  - name: "Prompts List Verification"
+    description: "Verify server provides prompts"
+    tool: "prompts_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "prompts"
+
+  - name: "Prompt Get Test"
+    description: "Test retrieving a specific prompt"
+    tool: "prompt_get"
+    server: "fundamental_analysis"
+    arguments:
+      name: "prompt1"
+    assertions:
+      - type: "field_exists"
+        field: "messages"
+      - type: "array_length"
+        field: "messages"
+        operator: ">"
+        expected: 0

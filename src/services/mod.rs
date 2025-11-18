@@ -12,6 +12,7 @@ pub mod health_checker;
 pub mod inspector;
 pub mod response_cache;
 pub mod sampling_logger;
+pub mod test_executor;
 pub mod timing_tracker;
 
 pub use capability_validator::{CapabilityValidationResult, CapabilityValidator};
@@ -25,3 +26,4 @@ pub use persistent_logger::PersistentLogger;
 pub use response_cache::ResponseCache;
 pub use sampling_logger::SamplingLogger;
 pub use server_info_service::ServerInfoService;
+pub use test_executor::{AssertionResult, TestExecutor, TestResult};

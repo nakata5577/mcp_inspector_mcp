@@ -9,6 +9,7 @@ pub mod request;
 pub mod response;
 pub mod server_config;
 pub mod server_info;
+pub mod test_definition;
 
 pub use error::{InspectorError, Result};
 pub use execution_config::ExecutionConfig;
@@ -33,3 +34,4 @@ pub use server_info::{
     ConnectionStatus, PromptCapabilityInfo, ResourceCapabilityInfo, ServerCapabilitiesInfo,
     ServerImplementation, ServerInspectRequest, ServerInspectResponse, ToolCapabilityInfo,
 };
+pub use test_definition::{Assertion, TestCase, TestConfig, TestSuite};

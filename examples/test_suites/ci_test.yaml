@@ -1,0 +1,60 @@
+name: "CI/CD Test Suite"
+version: "1.0"
+description: "Fast test suite optimized for CI/CD environments"
+
+config:
+  timeout_ms: 10000
+  retry_count: 1
+  fail_fast: true  # Fail fast for CI
+  parallel: true   # Run in parallel for speed
+
+tests:
+  - name: "Quick Health Check"
+    description: "Fast server health verification"
+    tool: "health_check"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "status"
+        expected: "healthy"
+
+  - name: "Basic Tool List"
+    description: "Verify basic tools are available"
+    tool: "tools_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "tools"
+      - type: "array_length"
+        field: "tools"
+        operator: ">"
+        expected: 0
+
+  - name: "Basic Resources Check"
+    description: "Verify resources endpoint responds"
+    tool: "resources_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "resources"
+
+  - name: "Basic Prompts Check"
+    description: "Verify prompts endpoint responds"
+    tool: "prompts_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "prompts"
+
+  - name: "Response Time Check"
+    description: "Verify server responds within acceptable time"
+    tool: "health_check"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "response_time"
+        operator: "<"
+        expected: 1000

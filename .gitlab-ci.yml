@@ -1,0 +1,18 @@
+stages:
+  - test
+
+mcp_integration_test:
+  stage: test
+  image: rust:latest
+  script:
+    - cargo build --release
+    - cargo run --release -- batch-test
+        --test-file examples/test_suites/basic_test.yaml
+        --report-format junit
+        --report-output test-results/junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: test-results/junit.xml
+    paths:
+      - test-results/

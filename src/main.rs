@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use mcp_inspector_mcp::{
     models::{debug_config, InspectorError, LoggingBackend, LoggingConfig, ServerConfig},
     run_server, InspectorConfig, InspectorService,
 };
 use mcp_inspector_mcp::services::config_manager;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// MCP Inspector Server - Monitor and debug MCP servers
@@ -14,12 +16,41 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[command(version)]
 struct Cli {
     /// Enable verbose debug output with detailed logging
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     verbose: bool,
 
     /// Optional path to configuration file (default: .inspector/config.json)
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     config: Option<String>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+/// Global static variable to hold the log guard for the entire program lifetime
+/// This ensures the non_blocking writer is flushed properly on program termination
+static LOG_GUARD: Lazy<Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>> =
+    Lazy::new(|| Mutex::new(None));
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Inspect MCP server interactively (default mode)
+    Inspect,
+
+    /// Run batch tests from YAML/JSON file
+    BatchTest {
+        /// Path to test definition file (YAML or JSON)
+        #[arg(short, long)]
+        test_file: String,
+
+        /// Report output format (console, junit, json)
+        #[arg(long, default_value = "console")]
+        report_format: String,
+
+        /// Report output file path
+        #[arg(long)]
+        report_output: Option<String>,
+    },
 }
 
 /// Initialize logging with optional file output
@@ -75,9 +106,9 @@ fn init_logging(verbose: bool) -> Result<()> {
             .with(file_layer)
             .init();
 
-        // Keep the guard alive for the entire program lifetime
-        // This is necessary to ensure the non_blocking writer is flushed properly
-        std::mem::forget(_guard);
+        // Store the guard in a static variable to keep it alive for the entire program lifetime
+        // This ensures the non_blocking writer is flushed properly on program termination
+        *LOG_GUARD.lock().unwrap() = Some(_guard);
     } else {
         // Initialize subscriber with only stderr layer
         tracing_subscriber::registry()
@@ -90,15 +121,35 @@ fn init_logging(verbose: bool) -> Result<()> {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    let exit_code = run().await.unwrap_or_else(|e| {
+        eprintln!("Error: {}", e);
+        3 // Execution error
+    });
+    std::process::exit(exit_code);
+}
+
+async fn run() -> Result<i32> {
     // Parse command line arguments
     let cli = Cli::parse();
 
     // Initialize logging with verbose mode if requested
     init_logging(cli.verbose).context("Failed to initialize logging")?;
 
+    // Dispatch command
+    match cli.command {
+        Some(Commands::BatchTest {
+            test_file,
+            report_format,
+            report_output,
+        }) => run_batch_test(&test_file, &report_format, report_output.as_deref()).await,
+        Some(Commands::Inspect) | None => run_inspect_mode(cli.verbose).await,
+    }
+}
+
+async fn run_inspect_mode(verbose: bool) -> Result<i32> {
     tracing::info!("MCP Inspector Server starting...");
-    if cli.verbose {
+    if verbose {
         tracing::debug!("Verbose mode enabled via CLI argument");
     }
 
@@ -112,14 +163,14 @@ async fn main() -> Result<()> {
     let mut execution_config = project_config.execution_config.clone();
 
     // CLI argument takes precedence over config file
-    if cli.verbose {
+    if verbose {
         execution_config.verbose = true;
     }
 
     // Set global verbose mode based on execution config
     if execution_config.verbose {
         debug_config::enable_verbose_mode();
-        tracing::info!("Verbose mode enabled from {}", if cli.verbose { "CLI argument" } else { "config file" });
+        tracing::info!("Verbose mode enabled from {}", if verbose { "CLI argument" } else { "config file" });
     }
 
     let config = InspectorConfig {
@@ -158,7 +209,158 @@ async fn main() -> Result<()> {
     tracing::info!("MCP Inspector Server ready");
     run_server(inspector).await?;
 
-    Ok(())
+    Ok(0)
+}
+
+async fn run_batch_test(
+    test_file: &str,
+    report_format: &str,
+    report_output: Option<&str>,
+) -> Result<i32> {
+    use mcp_inspector_mcp::models::TestSuite;
+    use mcp_inspector_mcp::services::TestExecutor;
+    use std::path::Path;
+
+    tracing::info!("Running batch tests from: {}", test_file);
+
+    // テスト定義ファイルの読み込み
+    let suite = TestSuite::from_file(Path::new(test_file))
+        .with_context(|| format!("Failed to load test file: {}", test_file))?;
+
+    // バリデーション
+    suite.validate()
+        .context("Test suite validation failed")?;
+
+    tracing::info!("Test suite loaded: {} (version: {})", suite.name, suite.version);
+    tracing::info!("Test count: {}", suite.tests.len());
+
+    // テスト実行
+    let executor = TestExecutor::new();
+    let results = executor.run_test_suite(&suite).await
+        .context("Test execution failed")?;
+
+    // レポート出力
+    match report_format {
+        "console" => {
+            print_console_report(&suite.name, &results);
+        }
+        "junit" => {
+            let xml_report = generate_junit_report(&suite.name, &results)?;
+            if let Some(output_path) = report_output {
+                std::fs::write(output_path, xml_report)
+                    .with_context(|| format!("Failed to write JUnit report to {}", output_path))?;
+                tracing::info!("JUnit report written to: {}", output_path);
+            } else {
+                println!("{}", xml_report);
+            }
+        }
+        "json" => {
+            let json_report = serde_json::to_string_pretty(&results)
+                .context("Failed to serialize results to JSON")?;
+            if let Some(output_path) = report_output {
+                std::fs::write(output_path, json_report)
+                    .with_context(|| format!("Failed to write JSON report to {}", output_path))?;
+                tracing::info!("JSON report written to: {}", output_path);
+            } else {
+                println!("{}", json_report);
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!("Unknown report format: {}", report_format));
+        }
+    }
+
+    // 終了コードを決定
+    let all_passed = results.iter().all(|r| r.passed);
+    if all_passed {
+        Ok(0) // 全テスト成功
+    } else {
+        Ok(1) // テスト失敗
+    }
+}
+
+fn print_console_report(suite_name: &str, results: &[mcp_inspector_mcp::services::TestResult]) {
+    println!("╔{}╗", "═".repeat(62));
+    println!("║ {:^60} ║", suite_name);
+    println!("╚{}╝", "═".repeat(62));
+    println!();
+
+    for result in results {
+        let status = if result.passed { "✓ PASS" } else { "✗ FAIL" };
+        println!("{} {} ({}ms)", status, result.test_name, result.duration_ms);
+
+        if !result.passed {
+            for assertion in &result.assertions {
+                if !assertion.passed {
+                    println!("  ✗ {}: {}", assertion.assertion_type, assertion.message);
+                }
+            }
+            if let Some(error) = &result.error {
+                println!("  Error: {}", error);
+            }
+        }
+    }
+
+    println!();
+    let total = results.len();
+    let passed = results.iter().filter(|r| r.passed).count();
+    let failed = total - passed;
+    println!("📊 Summary: {} total, {} passed, {} failed", total, passed, failed);
+}
+
+fn generate_junit_report(suite_name: &str, results: &[mcp_inspector_mcp::services::TestResult]) -> Result<String> {
+    // 簡易的なJUnit XML生成（後で完全な実装に置き換え）
+    let total_tests = results.len();
+    let failures = results.iter().filter(|r| !r.passed).count();
+    let total_time: f64 = results.iter().map(|r| r.duration_ms as f64 / 1000.0).sum();
+
+    let mut xml = String::new();
+    xml.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    xml.push('\n');
+    xml.push_str(&format!(
+        r#"<testsuites tests="{}" failures="{}" time="{:.3}">"#,
+        total_tests, failures, total_time
+    ));
+    xml.push('\n');
+    xml.push_str(&format!(
+        r#"  <testsuite name="{}" tests="{}" failures="{}" time="{:.3}">"#,
+        suite_name, total_tests, failures, total_time
+    ));
+    xml.push('\n');
+
+    for result in results {
+        let time = result.duration_ms as f64 / 1000.0;
+        xml.push_str(&format!(
+            r#"    <testcase name="{}" time="{:.3}">"#,
+            result.test_name, time
+        ));
+        xml.push('\n');
+
+        if !result.passed {
+            xml.push_str(r#"      <failure message="Test failed">"#);
+            xml.push('\n');
+            if let Some(error) = &result.error {
+                xml.push_str(&format!("Error: {}\n", error));
+            }
+            for assertion in &result.assertions {
+                if !assertion.passed {
+                    xml.push_str(&format!("{}: {}\n", assertion.assertion_type, assertion.message));
+                }
+            }
+            xml.push_str(r#"      </failure>"#);
+            xml.push('\n');
+        }
+
+        xml.push_str(r#"    </testcase>"#);
+        xml.push('\n');
+    }
+
+    xml.push_str(r#"  </testsuite>"#);
+    xml.push('\n');
+    xml.push_str(r#"</testsuites>"#);
+    xml.push('\n');
+
+    Ok(xml)
 }
 
 /// Convert ServerEntry to ServerConfig

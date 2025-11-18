@@ -1,0 +1,59 @@
+name: "Basic MCP Server Test"
+version: "1.0"
+description: "Simple test suite example"
+
+config:
+  timeout_ms: 10000
+  retry_count: 1
+  fail_fast: false
+  parallel: false
+
+tests:
+  - name: "Server Health Check"
+    description: "Verify server is responsive"
+    tool: "health_check"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "status"
+        expected: "healthy"
+      - type: "response_time"
+        operator: "<"
+        expected: 1000
+
+  - name: "Get Tools List"
+    description: "List all available tools"
+    tool: "tools_list"
+    server: "fundamental_analysis"
+    arguments: {}
+    assertions:
+      - type: "field_exists"
+        field: "tools"
+      - type: "array_length"
+        field: "tools"
+        operator: ">"
+        expected: 0
+      - type: "response_time"
+        operator: "<"
+        expected: 2000
+
+  - name: "Call RSI Tool"
+    description: "Calculate RSI for a sample stock"
+    tool: "tools_call"
+    server: "fundamental_analysis"
+    arguments:
+      name: "calculate_rsi"
+      params:
+        symbol: "AAPL"
+        period: 14
+    assertions:
+      - type: "field_exists"
+        field: "result"
+      - type: "field_exists"
+        field: "result.content"
+      - type: "json_value_type"
+        field: "result"
+        expected: "object"
+      - type: "response_time"
+        operator: "<"
+        expected: 5000

@@ -1,0 +1,45 @@
+name: MCP Server Integration Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build MCP Inspector
+        run: |
+          cargo build --release
+
+      - name: Run Batch Tests
+        run: |
+          cargo run --release -- batch-test \
+            --test-file examples/test_suites/basic_test.yaml \
+            --report-format junit \
+            --report-output test-results/junit.xml
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results/junit.xml
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
