@@ -4,6 +4,7 @@ pub mod execution_config;
 pub mod health;
 pub mod logging_config;
 pub mod logging_inspection;
+pub mod metrics;
 pub mod project_config;
 pub mod request;
 pub mod response;
@@ -18,6 +19,9 @@ pub use health::{
 };
 pub use logging_config::{LoggingBackend, LoggingConfig};
 pub use logging_inspection::{LogEntry, LogLevel, LoggingMessagesRequest, LoggingMessagesResponse};
+pub use metrics::{
+    AggregatedMetrics, MetricStatus, Metrics, ResponseTimeStats, TimeWindow,
+};
 pub use project_config::{LoggingSettings, ProjectConfig, ServerEntry};
 pub use request::{
     PromptGetRequest, PromptsListRequest, ResourceReadRequest, ResourcesListRequest,

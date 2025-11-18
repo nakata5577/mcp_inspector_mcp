@@ -1,19 +1,20 @@
 use crate::client::ClientManager;
 use crate::models::{
-    HealthCheckResponse, InspectorConfig, LoggingMessagesRequest, LoggingMessagesResponse,
-    PromptGetRequest, PromptGetResponse, PromptsListRequest, PromptsListResponse,
-    ResourceReadRequest, ResourceReadResponse, ResourcesListRequest, ResourcesListResponse, Result,
-    SamplingLogsRequest, SamplingLogsResponse, ServerInspectResponse, ToolCallRequest,
-    ToolCallResponse, ToolsListResponse,
+    AggregatedMetrics, HealthCheckResponse, InspectorConfig, LoggingMessagesRequest,
+    LoggingMessagesResponse, MetricStatus, PromptGetRequest, PromptGetResponse,
+    PromptsListRequest, PromptsListResponse, ResourceReadRequest, ResourceReadResponse,
+    ResourcesListRequest, ResourcesListResponse, Result, SamplingLogsRequest,
+    SamplingLogsResponse, ServerInspectResponse, TimeWindow, ToolCallRequest, ToolCallResponse,
+    ToolsListResponse,
 };
 use crate::services::{
-    create_logger, CapabilityValidationResult, CapabilityValidator, HealthChecker, LoggingInspector, ResponseCache, SamplingLogger,
-    ServerInfoService,
+    create_logger, CapabilityValidationResult, CapabilityValidator, HealthChecker,
+    LoggingInspector, MetricsCollector, ResponseCache, SamplingLogger, ServerInfoService,
 };
 use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 
 /// Service for inspecting and interacting with MCP servers
@@ -24,6 +25,7 @@ pub struct InspectorService {
     logging_inspector: Arc<LoggingInspector>,
     response_cache: Arc<ResponseCache>,
     health_checker: Arc<HealthChecker>,
+    metrics_collector: Arc<MetricsCollector>,
 }
 
 impl InspectorService {
@@ -59,12 +61,16 @@ impl InspectorService {
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new(Arc::clone(&client_manager)));
 
+        // Create metrics collector
+        let metrics_collector = Arc::new(MetricsCollector::new());
+
         Ok(Self {
             client_manager,
             sampling_logger,
             logging_inspector,
             response_cache,
             health_checker,
+            metrics_collector,
         })
     }
 
@@ -74,76 +80,122 @@ impl InspectorService {
     /// response exists, it will be returned immediately. Otherwise, the
     /// server will be queried and the result will be cached.
     pub async fn list_tools(&self, server_name: &str) -> Result<ToolsListResponse> {
+        let start_time = Instant::now();
+        let cache_hit;
+
         // Try to get from cache first
-        if let Some(tools) = self.response_cache.get_tools(server_name).await {
-            return Ok(ToolsListResponse {
+        let result = if let Some(tools) = self.response_cache.get_tools(server_name).await {
+            cache_hit = true;
+            Ok(ToolsListResponse {
                 server: server_name.to_string(),
                 tools,
-            });
-        }
+            })
+        } else {
+            cache_hit = false;
+            // Cache miss - fetch from server
+            let client = self
+                .client_manager
+                .get_client(server_name)
+                .await
+                .context("Failed to get client")?;
 
-        // Cache miss - fetch from server
-        let client = self
-            .client_manager
-            .get_client(server_name)
-            .await
-            .context("Failed to get client")?;
+            let tools = client
+                .list_tools()
+                .await
+                .context("Failed to list tools from server")?;
 
-        let tools = client
-            .list_tools()
-            .await
-            .context("Failed to list tools from server")?;
+            // Cache the result
+            self.response_cache
+                .set_tools(
+                    server_name.to_string(),
+                    tools.clone(),
+                    self.response_cache.default_ttl(),
+                )
+                .await;
 
-        // Cache the result
-        self.response_cache
-            .set_tools(
-                server_name.to_string(),
-                tools.clone(),
-                self.response_cache.default_ttl(),
-            )
-            .await;
+            Ok(ToolsListResponse {
+                server: server_name.to_string(),
+                tools,
+            })
+        };
 
-        Ok(ToolsListResponse {
-            server: server_name.to_string(),
-            tools,
-        })
+        // Record metrics
+        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+        let status = if result.is_ok() {
+            MetricStatus::Success
+        } else {
+            MetricStatus::Error
+        };
+        self.metrics_collector.record_metric(
+            server_name.to_string(),
+            "tools_list".to_string(),
+            elapsed_ms,
+            status,
+            cache_hit,
+            false, // Connection reuse is handled by ClientManager
+        );
+
+        result
     }
 
     pub async fn call_tool(&self, request: ToolCallRequest) -> Result<ToolCallResponse> {
+        let start_time = Instant::now();
+
         // DEBUG: Log the request
         tracing::info!("=== INSPECTOR CALL_TOOL DEBUG ===");
         tracing::info!("Request server: {}", request.server);
         tracing::info!("Request tool_name: {}", request.tool_name);
         tracing::info!("Request arguments: {:?}", request.arguments);
 
-        let client = self
-            .client_manager
-            .get_client(&request.server)
-            .await
-            .context("Failed to get client")?;
+        let result = async {
+            let client = self
+                .client_manager
+                .get_client(&request.server)
+                .await
+                .context("Failed to get client")?;
 
-        tracing::info!("Client acquired for server: {}", request.server);
+            tracing::info!("Client acquired for server: {}", request.server);
 
-        // Validate server capabilities
-        let capabilities = client.capabilities().await;
-        let validator = CapabilityValidator::new(capabilities);
-        let validation_result = validator.validate_tools_call(&request.tool_name);
-        if let CapabilityValidationResult::Warning { message } = validation_result {
-            tracing::warn!("{}", message);
+            // Validate server capabilities
+            let capabilities = client.capabilities().await;
+            let validator = CapabilityValidator::new(capabilities);
+            let validation_result = validator.validate_tools_call(&request.tool_name);
+            if let CapabilityValidationResult::Warning { message } = validation_result {
+                tracing::warn!("{}", message);
+            }
+
+            let result = client
+                .call_tool(&request.tool_name, request.arguments)
+                .await
+                .context("Failed to call tool on server")?;
+
+            tracing::info!("Tool result from client: {:?}", result);
+
+            Ok(ToolCallResponse {
+                server: request.server.clone(),
+                tool_name: request.tool_name.clone(),
+                result,
+            })
         }
+        .await;
 
-        let result = client
-            .call_tool(&request.tool_name, request.arguments)
-            .await
-            .context("Failed to call tool on server")?;
+        // Record metrics
+        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+        let status = if result.is_ok() {
+            MetricStatus::Success
+        } else {
+            MetricStatus::Error
+        };
+        self.metrics_collector.record_metric(
+            request.server,
+            format!("tools_call:{}", request.tool_name),
+            elapsed_ms,
+            status,
+            false, // Tool calls are not cached
+            false,
+        );
 
-        tracing::info!("Tool result from client: {:?}", result);
-
-        Ok(ToolCallResponse {
-            server: request.server,
-            tool_name: request.tool_name,
-            result,
-        })
+        result
     }
 
     /// List all configured server names
@@ -659,5 +711,82 @@ impl InspectorService {
             .logging_inspector
             .get_logging_messages(request)
             .context("Failed to retrieve logging messages")?)
+    }
+
+    // ========== Metrics Methods ==========
+
+    /// Get the metrics collector instance
+    ///
+    /// Returns a reference to the underlying MetricsCollector for direct access
+    /// to metrics data and aggregation methods.
+    pub fn metrics_collector(&self) -> Arc<MetricsCollector> {
+        Arc::clone(&self.metrics_collector)
+    }
+
+    /// Get aggregated metrics for a specific server
+    ///
+    /// # Arguments
+    ///
+    /// * `server_name` - Name of the server to get metrics for
+    /// * `tool_name` - Optional tool name filter
+    /// * `window` - Time window for aggregation
+    ///
+    /// # Returns
+    ///
+    /// Aggregated metrics including response time statistics, throughput,
+    /// error rate, cache hit rate, and other performance indicators.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crate::models::TimeWindow;
+    ///
+    /// let metrics = service.get_metrics("my-server", None, TimeWindow::Last24Hours);
+    /// println!("Average response time: {:.2}ms", metrics.response_time.avg);
+    /// println!("Error rate: {:.2}%", metrics.error_rate);
+    /// ```
+    pub fn get_metrics(
+        &self,
+        server_name: &str,
+        tool_name: Option<&str>,
+        window: TimeWindow,
+    ) -> AggregatedMetrics {
+        self.metrics_collector
+            .aggregate_metrics(server_name, tool_name, window)
+    }
+
+    /// Get aggregated metrics grouped by server
+    ///
+    /// # Arguments
+    ///
+    /// * `window` - Time window for aggregation
+    ///
+    /// # Returns
+    ///
+    /// A HashMap mapping server names to their aggregated metrics
+    pub fn get_metrics_by_server(
+        &self,
+        window: TimeWindow,
+    ) -> HashMap<String, AggregatedMetrics> {
+        self.metrics_collector.aggregate_by_server(window)
+    }
+
+    /// Get aggregated metrics grouped by tool for a specific server
+    ///
+    /// # Arguments
+    ///
+    /// * `server_name` - Name of the server to get metrics for
+    /// * `window` - Time window for aggregation
+    ///
+    /// # Returns
+    ///
+    /// A HashMap mapping tool names to their aggregated metrics
+    pub fn get_metrics_by_tool(
+        &self,
+        server_name: &str,
+        window: TimeWindow,
+    ) -> HashMap<String, AggregatedMetrics> {
+        self.metrics_collector
+            .aggregate_by_tool(server_name, window)
     }
 }

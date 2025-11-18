@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use mcp_inspector_mcp::{
-    models::{debug_config, InspectorError, LoggingBackend, LoggingConfig, ServerConfig},
+    models::{debug_config, InspectorError, LoggingBackend, LoggingConfig, ServerConfig, TimeWindow},
     run_server, InspectorConfig, InspectorService,
 };
-use mcp_inspector_mcp::services::config_manager;
+use mcp_inspector_mcp::services::{config_manager, BottleneckDetector, DetectionConfig, MetricsCollector, ReportFormat, ReportService};
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// MCP Inspector Server - Monitor and debug MCP servers
@@ -22,6 +23,26 @@ struct Cli {
     /// Optional path to configuration file (default: .inspector/config.json)
     #[arg(short, long, global = true)]
     config: Option<String>,
+
+    /// Show performance metrics summary
+    #[arg(long)]
+    metrics: bool,
+
+    /// Generate performance report (console, json, html)
+    #[arg(long, value_name = "FORMAT")]
+    report: Option<String>,
+
+    /// Time window for metrics (1h, 24h, 7d)
+    #[arg(long, default_value = "24h")]
+    time_window: String,
+
+    /// Detect performance bottlenecks
+    #[arg(long)]
+    detect_bottlenecks: bool,
+
+    /// Output file for report (default: stdout)
+    #[arg(long, value_name = "FILE")]
+    output: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -135,6 +156,21 @@ async fn run() -> Result<i32> {
 
     // Initialize logging with verbose mode if requested
     init_logging(cli.verbose).context("Failed to initialize logging")?;
+
+    // Check if any metrics-related options are specified
+    let has_metrics_options = cli.metrics || cli.report.is_some() || cli.detect_bottlenecks;
+
+    // If metrics options are specified, run metrics mode
+    if has_metrics_options {
+        return run_metrics_mode(
+            &cli.time_window,
+            cli.metrics,
+            cli.report.as_deref(),
+            cli.detect_bottlenecks,
+            cli.output.as_deref(),
+        )
+        .await;
+    }
 
     // Dispatch command
     match cli.command {
@@ -413,4 +449,124 @@ fn convert_logging_settings(
         db_path,
         max_logs: settings.max_logs,
     }
+}
+
+/// Parse time window string to TimeWindow enum
+fn parse_time_window(s: &str) -> Result<TimeWindow> {
+    match s.to_lowercase().as_str() {
+        "1h" => Ok(TimeWindow::LastHour),
+        "24h" => Ok(TimeWindow::Last24Hours),
+        "7d" => Ok(TimeWindow::Last7Days),
+        _ => Err(anyhow::anyhow!(
+            "Invalid time window: {}. Valid values: 1h, 24h, 7d",
+            s
+        )),
+    }
+}
+
+/// Parse report format string to ReportFormat enum
+fn parse_report_format(s: &str) -> Result<ReportFormat> {
+    match s.to_lowercase().as_str() {
+        "console" => Ok(ReportFormat::Console),
+        "json" => Ok(ReportFormat::Json),
+        "html" => Ok(ReportFormat::Html),
+        _ => Err(anyhow::anyhow!(
+            "Invalid report format: {}. Valid values: console, json, html",
+            s
+        )),
+    }
+}
+
+/// Run metrics mode (--metrics, --report, --detect-bottlenecks)
+async fn run_metrics_mode(
+    time_window_str: &str,
+    show_metrics: bool,
+    report_format: Option<&str>,
+    detect_bottlenecks: bool,
+    output_file: Option<&std::path::Path>,
+) -> Result<i32> {
+    tracing::info!("Running metrics mode");
+
+    // Parse time window
+    let time_window = parse_time_window(time_window_str)
+        .context("Failed to parse time window")?;
+
+    // For now, create a mock metrics collector with sample data
+    // In a real implementation, this would load from persistent storage
+    let metrics_collector = Arc::new(MetricsCollector::new());
+
+    // Show metrics summary if requested
+    if show_metrics {
+        let server_metrics = metrics_collector.aggregate_by_server(time_window);
+
+        if server_metrics.is_empty() {
+            println!("No metrics available for the specified time window.");
+            println!("Note: Metrics are only collected during runtime.");
+            return Ok(0);
+        }
+
+        println!("\n=== Metrics Summary ({}) ===\n", time_window);
+
+        for (server_name, server_agg) in &server_metrics {
+            println!("Server: {}", server_name);
+            println!("  Total Requests: {}", server_agg.total_requests);
+            println!("  Success Rate: {:.1}%", 100.0 - server_agg.error_rate);
+            println!("  Response Time (p50): {}ms", server_agg.response_time.p50);
+            println!("  Response Time (p99): {}ms", server_agg.response_time.p99);
+            println!("  Throughput: {:.2} req/s", server_agg.throughput);
+            println!();
+
+            // Show tool-level metrics
+            let tool_metrics = metrics_collector.aggregate_by_tool(server_name, time_window);
+            if !tool_metrics.is_empty() {
+                println!("  Tools:");
+                for (tool_name, tool_agg) in &tool_metrics {
+                    println!("    - {}: {} requests, p99={}ms",
+                        tool_name,
+                        tool_agg.total_requests,
+                        tool_agg.response_time.p99
+                    );
+                }
+                println!();
+            }
+        }
+    }
+
+    // Generate report if requested
+    if let Some(format_str) = report_format {
+        let format = parse_report_format(format_str)
+            .context("Failed to parse report format")?;
+
+        let report_service = ReportService::new(metrics_collector.clone());
+        let report = report_service.generate_report(time_window, format)
+            .context("Failed to generate report")?;
+
+        // Output report
+        if let Some(path) = output_file {
+            std::fs::write(path, &report)
+                .with_context(|| format!("Failed to write report to {:?}", path))?;
+            println!("Report written to: {}", path.display());
+        } else {
+            println!("{}", report);
+        }
+    }
+
+    // Detect bottlenecks if requested
+    if detect_bottlenecks {
+        let config = DetectionConfig::default();
+        let detector = BottleneckDetector::new(metrics_collector.clone(), config);
+        let bottlenecks = detector.detect_bottlenecks(time_window);
+
+        if bottlenecks.is_empty() {
+            println!("\n=== No Bottlenecks Detected ===");
+            println!("All metrics are within acceptable thresholds.");
+        } else {
+            println!("\n=== Bottlenecks Detected ({}) ===\n", bottlenecks.len());
+            for bottleneck in &bottlenecks {
+                println!("{}", bottleneck.format_alert());
+            }
+        }
+    }
+
+    Ok(0)
 }
