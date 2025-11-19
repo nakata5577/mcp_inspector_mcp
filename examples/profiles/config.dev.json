@@ -1,0 +1,23 @@
+{
+  "servers": [],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  },
+  "execution_config": {
+    "tool_timeout_ms": 10000,
+    "connection_timeout_ms": 10000,
+    "retry_count": 1,
+    "auto_retry_on_timeout": false,
+    "verbose": true
+  },
+  "metadata": {
+    "description": "Development environment configuration",
+    "tags": [
+      "dev",
+      "development"
+    ],
+    "created_at": "2025-11-20T00:00:00Z"
+  }
+}

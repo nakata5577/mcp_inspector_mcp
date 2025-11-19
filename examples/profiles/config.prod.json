@@ -1,0 +1,23 @@
+{
+  "servers": [],
+  "logging": {
+    "backend": "persistent",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  },
+  "execution_config": {
+    "tool_timeout_ms": 5000,
+    "connection_timeout_ms": 5000,
+    "retry_count": 3,
+    "auto_retry_on_timeout": true,
+    "verbose": false
+  },
+  "metadata": {
+    "description": "Production environment configuration",
+    "tags": [
+      "prod",
+      "production"
+    ],
+    "created_at": "2025-11-20T00:00:00Z"
+  }
+}

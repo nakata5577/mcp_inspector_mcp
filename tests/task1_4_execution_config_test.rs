@@ -22,7 +22,7 @@ fn test_default_execution_config() {
     assert_eq!(config.tool_timeout_ms, 30000, "Default tool timeout should be 30 seconds");
     assert_eq!(config.connection_timeout_ms, 5000, "Default connection timeout should be 5 seconds");
     assert_eq!(config.retry_count, 0, "Default retry count should be 0");
-    assert_eq!(config.auto_retry_on_timeout, false, "Default auto_retry should be false");
+    assert!(!config.auto_retry_on_timeout, "Default auto_retry should be false");
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn test_execution_config_json_serialization() {
     assert_eq!(deserialized.tool_timeout_ms, 60000);
     assert_eq!(deserialized.connection_timeout_ms, 10000);
     assert_eq!(deserialized.retry_count, 3);
-    assert_eq!(deserialized.auto_retry_on_timeout, true);
+    assert!(deserialized.auto_retry_on_timeout);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn test_execution_config_partial_json() {
     assert_eq!(config.tool_timeout_ms, 45000);
     assert_eq!(config.connection_timeout_ms, 5000); // default
     assert_eq!(config.retry_count, 0); // default
-    assert_eq!(config.auto_retry_on_timeout, false); // default
+    assert!(!config.auto_retry_on_timeout); // default
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn test_execution_config_empty_json() {
     assert_eq!(config.tool_timeout_ms, 30000);
     assert_eq!(config.connection_timeout_ms, 5000);
     assert_eq!(config.retry_count, 0);
-    assert_eq!(config.auto_retry_on_timeout, false);
+    assert!(!config.auto_retry_on_timeout);
 }
 
 // =============================================================================
@@ -96,7 +96,7 @@ fn test_from_env_with_all_vars() {
     assert_eq!(config.tool_timeout_ms, 60000);
     assert_eq!(config.connection_timeout_ms, 10000);
     assert_eq!(config.retry_count, 5);
-    assert_eq!(config.auto_retry_on_timeout, true);
+    assert!(config.auto_retry_on_timeout);
 
     // クリーンアップ
     env::remove_var("MCP_TOOL_TIMEOUT_MS");
@@ -119,7 +119,7 @@ fn test_from_env_with_no_vars() {
     assert_eq!(config.tool_timeout_ms, 30000);
     assert_eq!(config.connection_timeout_ms, 5000);
     assert_eq!(config.retry_count, 0);
-    assert_eq!(config.auto_retry_on_timeout, false);
+    assert!(!config.auto_retry_on_timeout);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn test_from_env_with_partial_vars() {
     assert_eq!(config.tool_timeout_ms, 45000);
     assert_eq!(config.connection_timeout_ms, 5000); // default
     assert_eq!(config.retry_count, 0); // default
-    assert_eq!(config.auto_retry_on_timeout, false); // default
+    assert!(!config.auto_retry_on_timeout); // default
 
     // クリーンアップ
     env::remove_var("MCP_TOOL_TIMEOUT_MS");
@@ -163,7 +163,7 @@ fn test_from_env_with_invalid_values() {
 
     assert_eq!(config.tool_timeout_ms, 30000); // default (parse failed)
     assert_eq!(config.retry_count, 0); // default (parse failed)
-    assert_eq!(config.auto_retry_on_timeout, false); // default (parse failed)
+    assert!(!config.auto_retry_on_timeout); // default (parse failed)
 
     // クリーンアップ
     env::remove_var("MCP_TOOL_TIMEOUT_MS");
@@ -259,7 +259,7 @@ fn test_merge_auto_retry_logic() {
     };
 
     let merged1 = config1.merge_with_env();
-    assert_eq!(merged1.auto_retry_on_timeout, true, "Config true should remain true");
+    assert!(merged1.auto_retry_on_timeout, "Config true should remain true");
 
     // 逆のケース
     env::set_var("MCP_AUTO_RETRY", "true");
@@ -273,7 +273,7 @@ fn test_merge_auto_retry_logic() {
     };
 
     let merged2 = config2.merge_with_env();
-    assert_eq!(merged2.auto_retry_on_timeout, true, "Env true should enable auto_retry");
+    assert!(merged2.auto_retry_on_timeout, "Env true should enable auto_retry");
 
     // クリーンアップ
     env::remove_var("MCP_AUTO_RETRY");
@@ -371,7 +371,7 @@ fn test_production_config_scenario() {
     assert_eq!(restored.tool_timeout_ms, 120_000);
     assert_eq!(restored.connection_timeout_ms, 10_000);
     assert_eq!(restored.retry_count, 3);
-    assert_eq!(restored.auto_retry_on_timeout, true);
+    assert!(restored.auto_retry_on_timeout);
 }
 
 #[test]
@@ -391,7 +391,7 @@ fn test_development_config_scenario() {
     assert_eq!(restored.tool_timeout_ms, 5_000);
     assert_eq!(restored.connection_timeout_ms, 1_000);
     assert_eq!(restored.retry_count, 0);
-    assert_eq!(restored.auto_retry_on_timeout, false);
+    assert!(!restored.auto_retry_on_timeout);
 }
 
 #[test]

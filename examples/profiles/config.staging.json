@@ -1,0 +1,23 @@
+{
+  "servers": [],
+  "logging": {
+    "backend": "memory",
+    "db_path": "./data/logs.db",
+    "max_logs": 10000
+  },
+  "execution_config": {
+    "tool_timeout_ms": 8000,
+    "connection_timeout_ms": 8000,
+    "retry_count": 2,
+    "auto_retry_on_timeout": false,
+    "verbose": false
+  },
+  "metadata": {
+    "description": "Staging environment configuration",
+    "tags": [
+      "staging",
+      "pre-production"
+    ],
+    "created_at": "2025-11-20T00:00:00Z"
+  }
+}

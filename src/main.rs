@@ -4,9 +4,12 @@ use mcp_inspector_mcp::{
     models::{debug_config, InspectorError, LoggingBackend, LoggingConfig, ServerConfig, TimeWindow},
     run_server, InspectorConfig, InspectorService,
 };
-use mcp_inspector_mcp::services::{config_manager, BottleneckDetector, DetectionConfig, MetricsCollector, ReportFormat, ReportService};
+use mcp_inspector_mcp::services::{
+    BottleneckDetector, ConfigFormat, ConfigImportExport, ConfigTemplate, DetectionConfig,
+    MetricsCollector, ProfileManager, ReportFormat, ReportService,
+};
 use once_cell::sync::Lazy;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -23,6 +26,18 @@ struct Cli {
     /// Optional path to configuration file (default: .inspector/config.json)
     #[arg(short, long, global = true)]
     config: Option<String>,
+
+    /// Profile to use (dev, staging, prod, etc.)
+    #[arg(long, global = true)]
+    profile: Option<String>,
+
+    /// List available profiles
+    #[arg(long)]
+    list_profiles: bool,
+
+    /// Validate a profile
+    #[arg(long, value_name = "PROFILE")]
+    validate_profile: Option<String>,
 
     /// Show performance metrics summary
     #[arg(long)]
@@ -71,6 +86,106 @@ enum Commands {
         /// Report output file path
         #[arg(long)]
         report_output: Option<String>,
+    },
+
+    /// Configuration management commands
+    Config {
+        #[command(subcommand)]
+        config_command: ConfigCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ConfigCommands {
+    /// Export configuration to file
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        output: String,
+
+        /// Output format (json, yaml)
+        #[arg(short, long)]
+        format: Option<String>,
+
+        /// Profile to export (default: current/default)
+        #[arg(short, long)]
+        profile: Option<String>,
+    },
+
+    /// Import configuration from file
+    Import {
+        /// Input file path
+        #[arg(short, long)]
+        input: String,
+
+        /// Input format (json, yaml)
+        #[arg(short, long)]
+        format: Option<String>,
+
+        /// Dry-run mode (show changes without applying)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Profile to import into
+        #[arg(short, long)]
+        profile: Option<String>,
+    },
+
+    /// Validate configuration file
+    Validate {
+        /// Input file path
+        #[arg(short, long)]
+        input: String,
+
+        /// Input format (json, yaml)
+        #[arg(short, long)]
+        format: Option<String>,
+    },
+
+    /// List available templates
+    Template {
+        #[command(subcommand)]
+        template_command: TemplateCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum TemplateCommands {
+    /// List all available templates
+    List,
+
+    /// Show template content
+    Show {
+        /// Template name
+        template: String,
+    },
+
+    /// Apply template to create/update profile
+    Apply {
+        /// Template name
+        #[arg(short, long)]
+        template: String,
+
+        /// Output profile name
+        #[arg(short, long)]
+        profile: String,
+    },
+
+    /// Create custom template from existing profile
+    Create {
+        /// Template name
+        #[arg(short, long)]
+        name: String,
+
+        /// Source profile name
+        #[arg(short, long)]
+        from: String,
+    },
+
+    /// Delete custom template
+    Delete {
+        /// Template name
+        template: String,
     },
 }
 
@@ -157,6 +272,16 @@ async fn run() -> Result<i32> {
     // Initialize logging with verbose mode if requested
     init_logging(cli.verbose).context("Failed to initialize logging")?;
 
+    // Handle profile listing
+    if cli.list_profiles {
+        return run_list_profiles().await;
+    }
+
+    // Handle profile validation
+    if let Some(ref profile_name) = cli.validate_profile {
+        return run_validate_profile(profile_name).await;
+    }
+
     // Check if any metrics-related options are specified
     let has_metrics_options = cli.metrics || cli.report.is_some() || cli.detect_bottlenecks;
 
@@ -179,19 +304,33 @@ async fn run() -> Result<i32> {
             report_format,
             report_output,
         }) => run_batch_test(&test_file, &report_format, report_output.as_deref()).await,
-        Some(Commands::Inspect) | None => run_inspect_mode(cli.verbose).await,
+        Some(Commands::Config { config_command }) => run_config_command(config_command).await,
+        Some(Commands::Inspect) | None => run_inspect_mode(cli.verbose, cli.profile.as_deref()).await,
     }
 }
 
-async fn run_inspect_mode(verbose: bool) -> Result<i32> {
+async fn run_inspect_mode(verbose: bool, profile: Option<&str>) -> Result<i32> {
     tracing::info!("MCP Inspector Server starting...");
     if verbose {
         tracing::debug!("Verbose mode enabled via CLI argument");
     }
 
-    // Load configuration from .inspector/config.json
-    let project_config = config_manager::load_config()
-        .context("Failed to load configuration from .inspector/config.json")?;
+    // Load configuration using ProfileManager
+    let profile_manager = ProfileManager::new()
+        .context("Failed to initialize ProfileManager")?;
+
+    let (profile_config, active_profile) = profile_manager
+        .load_active_profile(profile)
+        .context("Failed to load profile configuration")?;
+
+    tracing::info!("Using profile: {}", active_profile);
+
+    // Convert ProfileConfig to ProjectConfig
+    let project_config = mcp_inspector_mcp::models::ProjectConfig {
+        servers: profile_config.servers.clone(),
+        logging: profile_config.logging.clone(),
+        execution_config: profile_config.execution_config.clone(),
+    };
 
     // Convert ProjectConfig to InspectorConfig
     let servers = convert_server_entries(&project_config.servers)?;
@@ -569,4 +708,276 @@ async fn run_metrics_mode(
     }
 
     Ok(0)
+}
+
+/// List available profiles
+async fn run_list_profiles() -> Result<i32> {
+    let profile_manager = ProfileManager::new()
+        .context("Failed to initialize ProfileManager")?;
+
+    let profiles = profile_manager.list_profiles()
+        .context("Failed to list profiles")?;
+
+    if profiles.is_empty() {
+        println!("No profiles found.");
+        return Ok(0);
+    }
+
+    println!("\n=== Available Profiles ===\n");
+
+    for profile in &profiles {
+        println!("Profile: {}", profile.name);
+        if let Some(desc) = &profile.description {
+            println!("  Description: {}", desc);
+        }
+        if !profile.tags.is_empty() {
+            println!("  Tags: {}", profile.tags.join(", "));
+        }
+        println!("  Path: {}", profile.config_path);
+        println!();
+    }
+
+    println!("Total: {} profile(s)", profiles.len());
+
+    Ok(0)
+}
+
+/// Validate a profile
+async fn run_validate_profile(profile_name: &str) -> Result<i32> {
+    let profile_manager = ProfileManager::new()
+        .context("Failed to initialize ProfileManager")?;
+
+    match profile_manager.validate_profile(profile_name) {
+        Ok(()) => {
+            println!("✓ Profile '{}' is valid.", profile_name);
+            Ok(0)
+        }
+        Err(e) => {
+            eprintln!("✗ Profile '{}' validation failed: {}", profile_name, e);
+            Ok(1)
+        }
+    }
+}
+
+/// Handle config commands
+async fn run_config_command(config_command: ConfigCommands) -> Result<i32> {
+    match config_command {
+        ConfigCommands::Export {
+            output,
+            format,
+            profile,
+        } => run_config_export(&output, format.as_deref(), profile.as_deref()).await,
+        ConfigCommands::Import {
+            input,
+            format,
+            dry_run,
+            profile,
+        } => run_config_import(&input, format.as_deref(), dry_run, profile.as_deref()).await,
+        ConfigCommands::Validate { input, format } => {
+            run_config_validate(&input, format.as_deref()).await
+        }
+        ConfigCommands::Template { template_command } => {
+            run_template_command(template_command).await
+        }
+    }
+}
+
+/// Export configuration to file
+async fn run_config_export(
+    output: &str,
+    format: Option<&str>,
+    profile: Option<&str>,
+) -> Result<i32> {
+    let profile_manager = ProfileManager::new()
+        .context("Failed to initialize ProfileManager")?;
+
+    // Load profile
+    let (config, active_profile) = profile_manager
+        .load_active_profile(profile)
+        .context("Failed to load profile")?;
+
+    // Determine format
+    let format = match format {
+        Some(f) => f.parse()?,
+        None => ConfigFormat::from_path(Path::new(output))?,
+    };
+
+    // Export
+    let size = ConfigImportExport::export_config(&config, Path::new(output), Some(format))
+        .context("Failed to export configuration")?;
+
+    println!(
+        "✓ Configuration exported to {} ({} bytes, format: {:?}, profile: {})",
+        output, size, format, active_profile
+    );
+
+    Ok(0)
+}
+
+/// Import configuration from file
+async fn run_config_import(
+    input: &str,
+    format: Option<&str>,
+    dry_run: bool,
+    profile: Option<&str>,
+) -> Result<i32> {
+    let profile_manager = ProfileManager::new()
+        .context("Failed to initialize ProfileManager")?;
+
+    // Determine format
+    let format = match format {
+        Some(f) => Some(f.parse()?),
+        None => Some(ConfigFormat::from_path(Path::new(input))?),
+    };
+
+    if dry_run {
+        // Dry-run mode: show diff without applying
+        let (current_config, active_profile) = profile_manager
+            .load_active_profile(profile)
+            .context("Failed to load current profile")?;
+
+        let diff = ConfigImportExport::dry_run_import(&current_config, Path::new(input), format)
+            .context("Failed to perform dry-run import")?;
+
+        println!("\n=== Dry-Run: Import Preview ===\n");
+        println!("Target profile: {}", profile.unwrap_or(&active_profile));
+        println!("{}", diff.format());
+
+        if diff.has_changes() {
+            println!("To apply these changes, run without --dry-run flag.");
+        }
+
+        Ok(0)
+    } else {
+        // Import and save
+        let config = ConfigImportExport::import_config(Path::new(input), format)
+            .context("Failed to import configuration")?;
+
+        let target_profile = profile.unwrap_or("");
+        profile_manager.save_profile(target_profile, &config)
+            .context("Failed to save imported configuration")?;
+
+        println!(
+            "✓ Configuration imported from {} to profile '{}'",
+            input,
+            if target_profile.is_empty() {
+                "default"
+            } else {
+                target_profile
+            }
+        );
+
+        Ok(0)
+    }
+}
+
+/// Validate configuration file
+async fn run_config_validate(input: &str, format: Option<&str>) -> Result<i32> {
+    // Determine format
+    let format = match format {
+        Some(f) => Some(f.parse()?),
+        None => Some(ConfigFormat::from_path(Path::new(input))?),
+    };
+
+    match ConfigImportExport::validate_config_file(Path::new(input), format) {
+        Ok(warnings) => {
+            println!("✓ Configuration file is valid: {}", input);
+
+            if !warnings.is_empty() {
+                println!("\nWarnings:");
+                for warning in &warnings {
+                    println!("  ⚠ {}", warning);
+                }
+            }
+
+            Ok(0)
+        }
+        Err(e) => {
+            eprintln!("✗ Configuration validation failed: {}", e);
+            Ok(1)
+        }
+    }
+}
+
+/// Handle template commands
+async fn run_template_command(template_command: TemplateCommands) -> Result<i32> {
+    let template_manager = ConfigTemplate::new()
+        .context("Failed to initialize ConfigTemplate")?;
+
+    match template_command {
+        TemplateCommands::List => {
+            let templates = template_manager.list_all_templates()
+                .context("Failed to list templates")?;
+
+            println!("\n=== Available Templates ===\n");
+
+            // Preset templates
+            let presets: Vec<_> = templates.iter().filter(|t| t.is_preset).collect();
+            if !presets.is_empty() {
+                println!("Preset Templates:");
+                for template in presets {
+                    println!("  - {}: {}", template.name, template.description);
+                }
+                println!();
+            }
+
+            // Custom templates
+            let customs: Vec<_> = templates.iter().filter(|t| !t.is_preset).collect();
+            if !customs.is_empty() {
+                println!("Custom Templates:");
+                for template in customs {
+                    println!("  - {}: {}", template.name, template.description);
+                }
+                println!();
+            }
+
+            println!("Total: {} template(s)", templates.len());
+
+            Ok(0)
+        }
+        TemplateCommands::Show { template } => {
+            let json = template_manager.show_template(&template)
+                .context("Failed to show template")?;
+
+            println!("{}", json);
+
+            Ok(0)
+        }
+        TemplateCommands::Apply { template, profile } => {
+            let config = template_manager.apply_template(&template)
+                .context("Failed to apply template")?;
+
+            let profile_manager = ProfileManager::new()
+                .context("Failed to initialize ProfileManager")?;
+
+            profile_manager.save_profile(&profile, &config)
+                .context("Failed to save profile")?;
+
+            println!("✓ Template '{}' applied to profile '{}'", template, profile);
+
+            Ok(0)
+        }
+        TemplateCommands::Create { name, from } => {
+            let profile_manager = ProfileManager::new()
+                .context("Failed to initialize ProfileManager")?;
+
+            let config = profile_manager.load_profile(&from)
+                .context("Failed to load source profile")?;
+
+            template_manager.create_custom_template(&name, &config)
+                .context("Failed to create custom template")?;
+
+            println!("✓ Custom template '{}' created from profile '{}'", name, from);
+
+            Ok(0)
+        }
+        TemplateCommands::Delete { template } => {
+            template_manager.delete_custom_template(&template)
+                .context("Failed to delete template")?;
+
+            println!("✓ Custom template '{}' deleted", template);
+
+            Ok(0)
+        }
+    }
 }
