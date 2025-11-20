@@ -461,8 +461,13 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_clone_profile() {
-        let (_temp_dir, manager) = setup_test_env();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+        env::set_current_dir(&temp_path).unwrap();
+
+        let manager = ProfileManager::new().unwrap();
 
         let config = ProfileConfig::dev_profile();
         manager.save_profile("dev", &config).unwrap();

@@ -161,7 +161,15 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_deserialize_with_missing_fields() {
+        // Clear environment variables to ensure clean test
+        std::env::remove_var("MCP_TOOL_TIMEOUT_MS");
+        std::env::remove_var("MCP_CONNECTION_TIMEOUT_MS");
+        std::env::remove_var("MCP_RETRY_COUNT");
+        std::env::remove_var("MCP_AUTO_RETRY");
+        std::env::remove_var("MCP_VERBOSE");
+
         // 一部のフィールドが欠けている場合、デフォルト値が使用される
         let json = r#"{"tool_timeout_ms": 45000}"#;
         let config: ExecutionConfig = serde_json::from_str(json).unwrap();
@@ -174,6 +182,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_from_env_with_no_env_vars() {
         // 環境変数が設定されていない場合、デフォルト値が使用される
         std::env::remove_var("MCP_TOOL_TIMEOUT_MS");
@@ -191,6 +200,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_merge_with_env() {
         // 環境変数をセット
         std::env::set_var("MCP_TOOL_TIMEOUT_MS", "45000");
