@@ -27,4 +27,6 @@ Thumbs.db
 # Project-specific
 .inspector/
 
-.serena/logs/
+.serena/
+
+.env
