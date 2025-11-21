@@ -286,6 +286,14 @@ impl ConfigTemplate {
                 format!("Failed to serialize template: {}", e)
             ))?;
 
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = template_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| InspectorError::Config(
+                    format!("Failed to create template directory: {}", e)
+                ))?;
+        }
+
         fs::write(&template_path, content)
             .map_err(|e| InspectorError::Config(
                 format!("Failed to write template '{}': {}", template_name, e)

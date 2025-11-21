@@ -422,6 +422,11 @@ async fn run_batch_test(
         "junit" => {
             let xml_report = generate_junit_report(&suite.name, &results)?;
             if let Some(output_path) = report_output {
+                // Create parent directory if it doesn't exist
+                if let Some(parent) = Path::new(output_path).parent() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("Failed to create directory: {:?}", parent))?;
+                }
                 std::fs::write(output_path, xml_report)
                     .with_context(|| format!("Failed to write JUnit report to {}", output_path))?;
                 tracing::info!("JUnit report written to: {}", output_path);
@@ -433,6 +438,11 @@ async fn run_batch_test(
             let json_report = serde_json::to_string_pretty(&results)
                 .context("Failed to serialize results to JSON")?;
             if let Some(output_path) = report_output {
+                // Create parent directory if it doesn't exist
+                if let Some(parent) = Path::new(output_path).parent() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("Failed to create directory: {:?}", parent))?;
+                }
                 std::fs::write(output_path, json_report)
                     .with_context(|| format!("Failed to write JSON report to {}", output_path))?;
                 tracing::info!("JSON report written to: {}", output_path);
@@ -682,6 +692,11 @@ async fn run_metrics_mode(
 
         // Output report
         if let Some(path) = output_file {
+            // Create parent directory if it doesn't exist
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("Failed to create directory: {:?}", parent))?;
+            }
             std::fs::write(path, &report)
                 .with_context(|| format!("Failed to write report to {:?}", path))?;
             println!("Report written to: {}", path.display());

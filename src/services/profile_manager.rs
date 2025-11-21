@@ -122,6 +122,14 @@ impl ProfileManager {
                 format!("Failed to serialize profile '{}': {}", profile_name, e)
             ))?;
 
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| InspectorError::Config(
+                    format!("Failed to create profile directory: {}", e)
+                ))?;
+        }
+
         fs::write(&config_path, content)
             .map_err(|e| InspectorError::Config(
                 format!("Failed to write profile '{}': {}", profile_name, e)

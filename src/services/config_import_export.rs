@@ -87,6 +87,14 @@ impl ConfigImportExport {
         };
 
         // ファイルに書き込み
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| InspectorError::Config(
+                    format!("Failed to create directory: {}", e)
+                ))?;
+        }
+
         fs::write(output_path, &content)
             .map_err(|e| InspectorError::Config(
                 format!("Failed to write config to {}: {}", output_path.display(), e)
